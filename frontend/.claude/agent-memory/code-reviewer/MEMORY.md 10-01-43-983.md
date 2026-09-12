@@ -1,0 +1,7 @@
+- [Vessel 3D pipeline phase-01 follow-ups](project_vessel-3d-pipeline-phase01-followups.md) — beam check FIXED phase-03; frame[0] anchor still open, recheck phase-04+
+- [Vessel 3D pipeline phase-02 follow-ups](project_vessel-3d-pipeline-phase02-followups.md) — aft double-zero-station blade + slots-check single-z gap, recheck phase-04+
+- [Vessel 3D pipeline phase-03 follow-ups](project_vessel-3d-pipeline-phase03-followups.md) — livery shader cache-key waste + materialGroupFor default gap, recheck phase-04+
+- [Cargo loading sequence playback phase-01 follow-ups](project_cargo-loading-sequence-playback-phase01-followups.md) — draft_fwd/aft LCF bug + typecheck break, BOTH FIXED as of phase-03 review
+- [Cargo loading sequence playback phase-03 follow-ups](project_cargo-loading-sequence-playback-phase03-followups.md) — zustand no-selector re-render storm + Map-rebuild-per-frame, both perf-only High findings
+- [Cargo catalog + breakbulk phase-01/02 follow-ups](project_cargo-catalog-breakbulk-phase01-02-followups.md) — Critical LOA/LBP bug, CONFIRMED FIXED in phase-03/04 review
+- [Cargo catalog + breakbulk phase-03/04 follow-ups](project_cargo-catalog-breakbulk-phase03-04-followups.md) — fix confirmed correct/complete; High: mesh-builder regression test doesn't discriminate old/new code; Medium: kg_m missing hatchHeight term

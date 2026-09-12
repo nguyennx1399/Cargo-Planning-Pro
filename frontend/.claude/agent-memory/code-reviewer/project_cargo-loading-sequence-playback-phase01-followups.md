@@ -1,0 +1,19 @@
+---
+name: cargo-loading-sequence-playback-phase01-followups
+description: Unresolved bug found in phase-01 (demo stability calc engine) of plans/260911-1955-cargo-loading-sequence-playback — draft_fwd/aft LCF frame mismatch, plus an adjacent typecheck break in phase-02 scaffolding
+metadata:
+  type: project
+---
+
+Phase-01 review (2026-09-11) of `plans/260911-1955-cargo-loading-sequence-playback/phase-01-demo-stability-calc.md` found one new unreported bug, not caught by tests, plus one adjacent (out-of-scope) build break.
+
+**UPDATE (phase-03 review, 2026-09-11): Bug 1 is now FIXED.** `engine/stability-indicative.ts:100-101` uses the correct AP-referenced formula, with a code comment citing "Bug found in code review." Confirmed via direct read + `npm run typecheck`/`npm test` both clean (277/277). Bug 2 (VesselScene typecheck break) also fixed — `VesselScene.tsx` now calls `shipAttitudeInputFromStability(attitude)`. See [[project_cargo-loading-sequence-playback-phase03-followups]] for phase-03's own (new, perf-only) findings.
+
+**Bug 1 (HISTORICAL, now fixed — see UPDATE above) — `engine/stability-indicative.ts` draft_fwd_m/draft_aft_m use wrong LCF reference frame.**
+Lines ~91-92 compute the fwd/aft draft split using `lbpM/2 ± row.lcf_m`, which is the correct formula only if `lcf_m` is midship-referenced. But `row.lcf_m` (from `hydrostatic-table-calculator.ts`) is AP-referenced (0 at AP, `lbp_m` at FP — confirmed via `stations_x_m` in `parametric-hull-generator.ts`). Correct formula: `draft_fwd_m = row.draft_m + trim_m*(lbpM - lcf_m)/lbpM`, `draft_aft_m = row.draft_m - trim_m*lcf_m/lbpM`. Verified numerically on the real demo hull (`lcf_m≈79.1`, `lbpM/2=80`): buggy code puts ~99% of trim onto the aft draft and ~1% onto fwd, when it should be roughly a 50/50 split (LCF is near midship). `draft_mean_m` and `trim_m` (the actual COT) are unaffected — only the fwd/aft distribution is wrong, and `draft_fwd_m - draft_aft_m` still equals `trim_m` exactly (the bug is invisible in existing sign tests because `SIMPLE_TABLE`'s `lcf_m` happens to equal `lbpM/2`, making both formulas coincide).
+**Why:** the buggy formula was copied verbatim from the plan file's own pseudocode (phase-01.md §Architecture) — a planning-stage error, not an implementer deviation. As of this review it is still unfixed in `frontend/src/engine/stability-indicative.ts`.
+**How to apply:** before trusting/reviewing phase-02 (ship 3D attitude, consumes `draft_fwd_m`/`draft_aft_m` for trim rotation) or phase-03 of this plan, re-check whether this was fixed. If phase-02 review shows the bow/stern trim looking visually implausible (e.g. all sinkage change concentrated at the stern), this is the root cause to check first.
+
+**Bug 2 (out of phase-01 scope) — `npm run typecheck` currently fails project-wide** at `features/viewer3d/VesselScene.tsx:24`: passes `StabilityResult` (snake_case) directly to `useShipAttitude`, which expects `ShipAttitudeInput` (camelCase). An adapter `shipAttitudeInputFromStability()` already exists unused in `lib/ship-attitude-transform.ts` — `VesselScene.tsx` should call it instead of passing `attitude` raw. Looks like early/incomplete phase-02 scaffolding already sitting in `App.tsx`'s active import path even though plan.md marks phase-02 "Pending". Recheck this is fixed before phase-02 is marked complete.
+
+See also [[project_vessel-3d-pipeline-phase01-followups]], [[project_vessel-3d-pipeline-phase02-followups]], [[project_vessel-3d-pipeline-phase03-followups]] for the related vessel-3d-model-pipeline plan's own open items (that plan's phase-02 Cb-fit saturation finding is the one phase-01 of THIS plan discovered and fixed via the `demo-horizon-geometry.ts` cb label change — confirmed genuinely inert for all computation paths, verified by full grep of every `particulars.cb` read site).
