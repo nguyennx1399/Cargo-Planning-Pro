@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { VesselScene } from "@/features/viewer3d/VesselScene";
 import { Sidebar } from "@/features/panels/Sidebar";
 import { BayPlanView } from "@/features/bayplan/BayPlanView";
@@ -29,9 +30,9 @@ export default function App() {
 
   return (
     <div className="layout">
-      <button className="btn mode-toggle" onClick={() => setMode((m) => (m === "demo" ? "onboarding" : "demo"))}>
+      <Button variant="outline" className="mode-toggle" onClick={() => setMode((m) => (m === "demo" ? "onboarding" : "demo"))}>
         {mode === "demo" ? "Vessel onboarding (L2 import)" : "Back to demo"}
-      </button>
+      </Button>
       {mode === "onboarding" ? (
         <OffsetsImportPanel />
       ) : (

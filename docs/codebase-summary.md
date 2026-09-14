@@ -78,6 +78,12 @@ cargo-planner/
 | `engine/stability-indicative.ts` | Indicative (DEMO DATA) draft/list/trim/GM from weight distribution + hydrostatic table lookup | WeightItem, StabilityResult, calculateStability | ✓ Complete |
 | `engine/hydrostatic-table-lookup.ts` | Interpolate ship hydrostatic properties (displacement, LCB, MCT, KM) by draft | interpolateHydrostatics | ✓ Complete |
 | `engine/playback-slice.ts` | Zustand store slice for loading sequence playback state management | playbackActions, playbackSlice | ✓ Complete |
+| `engine/validate-plan.ts` | Frontend validation entry point; runs all rules against plan | validatePlan | ✓ Complete |
+| `engine/validation-rules.ts` | Frontend constraint rule functions | slot_exists, stack_weight, no_floating, etc. | ✓ Partial |
+| `engine/validation-context.ts` | Frontend ValidationContext (pre-indexed columns, stacks, containers) | ValidationContext | ✓ Complete |
+| `engine/breakbulk-validation-rules.ts` | Breakbulk-specific validation (overlap, forbidden zones, deck area) | checkBreakbulkOverlap, checkForbiddenZones, etc. | ✓ Complete |
+| `engine/breakbulk-overlap-check.ts` | 2D polygon overlap detection for breakbulk deck cargo | polygonsOverlap | ✓ Complete |
+| `engine/breakbulk-forbidden-zones.ts` | Define restricted deck areas (hatches, cranes, etc.) | isForbiddenZone | ✓ Complete |
 | `engine/hull/` | Parametric L1 hull generation (Cb fit, loft mesher, validation) | parametric-hull-generator, hull-loft-mesh-builder, section-integrals, slots-inside-hull-check, etc. (7 files) | ✓ Phase 2 complete |
 | `engine/vessel-components/` | Component library builders (superstructure, funnel, mast, lifeboat, hatch covers, lashing bridges) + material merging | superstructure-geometry, funnel-geometry, crane-geometry, deck-fittings-geometry, hatch-and-lashing-geometry, merge-static-components (9 files) | ✓ Phase 3 complete |
 | `engine/mesh-data.ts` | Mesh data utilities and livery shader material (`hull-livery-material.ts`: antifouling/boot-top/topside paint via `onBeforeCompile`) | HullLiveryMaterial, customProgramCacheKey | ✓ Phase 3 complete |

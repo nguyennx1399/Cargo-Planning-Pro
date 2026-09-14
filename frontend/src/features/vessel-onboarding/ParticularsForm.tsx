@@ -1,4 +1,6 @@
 import type { MainParticulars } from "@/types/vessel-geometry";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 const FIELDS: { key: keyof MainParticulars; label: string }[] = [
   { key: "loa_m", label: "LOA (m)" },
@@ -20,15 +22,16 @@ export function ParticularsForm({
   return (
     <div className="particulars-form">
       {FIELDS.map(({ key, label }) => (
-        <label key={key} className="field">
-          {label}
-          <input
+        <div key={key} className="grid gap-1.5">
+          <Label htmlFor={key}>{label}</Label>
+          <Input
+            id={key}
             type="number"
             step="any"
             value={particulars[key]}
             onChange={(e) => onChange({ ...particulars, [key]: Number(e.target.value) })}
           />
-        </label>
+        </div>
       ))}
     </div>
   );

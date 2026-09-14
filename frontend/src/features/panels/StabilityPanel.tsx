@@ -1,5 +1,8 @@
 import type { StabilityResult } from "@/engine/stability-indicative";
 import { usePlanStore } from "@/store/usePlanStore";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { SeverityAlertList } from "@/components/severity-alert-list";
 
 const STATUS_LABEL: Record<StabilityResult["status"], string> = {
   ok: "OK",
@@ -36,15 +39,16 @@ export function StabilityPanel({ attitude }: { attitude: StabilityResult | null 
             <dt>KG</dt><dd>{attitude.kg_m.toFixed(2)} m</dd>
           </dl>
           {attitude.messages.length > 0 && (
-            <ul className="violations">
-              {attitude.messages.map((m, i) => <li key={i} className={attitude.status === "critical" ? "error" : "warning"}>{m}</li>)}
-            </ul>
+            <SeverityAlertList
+              items={attitude.messages.map((m) => ({ message: m, severity: attitude.status === "critical" ? "error" as const : "warning" as const }))}
+            />
           )}
         </>
       )}
-      <label className="check">
-        <input type="checkbox" checked={exaggerate > 1} onChange={toggleExaggerate} /> Exaggerate angle (×5, for visibility)
-      </label>
+      <div className="flex items-center gap-2">
+        <Checkbox id="exaggerate" checked={exaggerate > 1} onCheckedChange={toggleExaggerate} />
+        <Label htmlFor="exaggerate">Exaggerate angle (×5, for visibility)</Label>
+      </div>
     </section>
   );
 }

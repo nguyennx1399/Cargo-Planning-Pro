@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Edges } from "@react-three/drei";
+import { Detailed, Edges } from "@react-three/drei";
 import * as THREE from "three";
 import type { Vessel } from "@/types/domain";
 import type { Livery, VesselGeometry } from "@/types/vessel-geometry";
@@ -23,12 +23,24 @@ const COMPONENT_GROUP_COLORS: Record<string, string> = {
  * Renders the real lofted hull + component library (vessel-3d-model-pipeline phases 2-3) when
  * the vessel has a `geometry_id` with generated offsets; otherwise falls back to the old
  * simplified box hull (unchanged) so any vessel without geometry still renders.
- * TODO(phase-3+): LOD (`<Detailed>`), funnel logo decal, water-transparency toggle and draft
- * marks all wait on P1-demo phase-04's `ShipGroup`/`Water`, which don't exist yet.
+ * TODO(phase-3+): funnel logo decal, water-transparency toggle and draft marks all wait on
+ * P1-demo phase-04's `Water`, which doesn't exist yet.
  */
 export function Hull({ vessel }: { vessel: Vessel }) {
   const geometry = vessel.geometry_id ? getVesselGeometry(vessel.geometry_id) : undefined;
-  if (geometry?.hull.offsets) return <LoftedHull vessel={vessel} geometry={geometry} />;
+  if (geometry?.hull.offsets) {
+    // LOD (E3-01c): past this distance, hull surface detail (plating, hatch covers) isn't
+    // visually resolvable anyway, so swap to the cheap box silhouette to cut draw/fill cost.
+    // THREE.LOD only toggles visibility per frame — both levels stay mounted, so this doesn't
+    // avoid the LoftedHull build, only its per-frame render cost once past the threshold.
+    const farDistance = Math.max(200, vessel.length_m * 1.3);
+    return (
+      <Detailed distances={[0, farDistance]}>
+        <LoftedHull vessel={vessel} geometry={geometry} />
+        <SimpleBoxHull vessel={vessel} />
+      </Detailed>
+    );
+  }
   return <SimpleBoxHull vessel={vessel} />;
 }
 

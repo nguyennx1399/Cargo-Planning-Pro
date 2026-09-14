@@ -29,10 +29,11 @@ const LENGTH_BY_SIZE: Record<Container["size"], number> = { "20": DIM.len20, "40
  */
 export function ContainerInstances({ vessel, plan }: Props) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
-  const { colorMode, showOnDeck, showUnderDeck, bayFilter, hoveredId, selectedId, playbackCount, setHovered, setSelected } =
+  const { colorMode, paletteMode, showOnDeck, showUnderDeck, bayFilter, hoveredId, selectedId, playbackCount, setHovered, setSelected } =
     usePlanStore(
       useShallow((s) => ({
         colorMode: s.colorMode,
+        paletteMode: s.paletteMode,
         showOnDeck: s.showOnDeck,
         showUnderDeck: s.showUnderDeck,
         bayFilter: s.bayFilter,
@@ -45,7 +46,7 @@ export function ContainerInstances({ vessel, plan }: Props) {
     );
 
   const byId = useMemo(() => new Map(plan.containers.map((c) => [c.id, c])), [plan.containers]);
-  const pods = useMemo(() => podColorMap(plan.ports), [plan.ports]);
+  const pods = useMemo(() => podColorMap(plan.ports, paletteMode), [plan.ports, paletteMode]);
 
   const items: Item[] = useMemo(() => {
     return visiblePlacements(plan.placements, playbackCount)

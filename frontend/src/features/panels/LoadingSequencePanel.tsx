@@ -1,4 +1,8 @@
 import { usePlanStore } from "@/store/usePlanStore";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
+import { Pause, Play, RotateCcw } from "lucide-react";
 
 /** Play/pause/scrub controls for the loading-sequence playback (phase 03) — drives
  * ContainerInstances + the live stability recompute via playbackCount in the store. */
@@ -18,38 +22,43 @@ export function LoadingSequencePanel({ total }: { total: number }) {
     <section>
       <h2>Loading sequence</h2>
       <p className="muted small">Watch the ship sink and heel as cargo is added, one container at a time.</p>
-      <div className="segmented" role="group" aria-label="Playback controls">
-        <button onClick={playbackPlaying ? pausePlayback : startOrResumePlayback} disabled={total === 0}>
+      <div className="flex gap-2" role="group" aria-label="Playback controls">
+        <Button onClick={playbackPlaying ? pausePlayback : startOrResumePlayback} disabled={total === 0}>
+          {playbackPlaying ? <Pause /> : <Play />}
           {playbackPlaying ? "Pause" : "Play"}
-        </button>
-        <button onClick={resetPlayback} disabled={playbackCount === null}>
-          Reset
-        </button>
+        </Button>
+        <Button variant="outline" onClick={resetPlayback} disabled={playbackCount === null}>
+          <RotateCcw /> Reset
+        </Button>
       </div>
       <p className="muted small">{shown} / {total} placed</p>
-      <label className="field">
-        Progress
-        <input
-          type="range"
+      <div className="grid gap-1.5 mt-2">
+        <Label id="playback-progress-label" htmlFor="playback-progress">Progress</Label>
+        <Slider
+          id="playback-progress"
+          aria-labelledby="playback-progress-label"
           min={0}
           max={total}
           step={1}
           value={shown}
-          onChange={(e) => setPlaybackCount(Number(e.target.value))}
+          // single-thumb slider: shadcn's generated wrapper types value/onValueChange as
+          // number | readonly number[] regardless of usage, so narrow the runtime-safe number.
+          onValueChange={(v) => setPlaybackCount(v as number)}
           disabled={total === 0}
         />
-      </label>
-      <label className="field">
-        Speed ({playbackSpeed}/s)
-        <input
-          type="range"
+      </div>
+      <div className="grid gap-1.5 mt-2">
+        <Label id="playback-speed-label" htmlFor="playback-speed">Speed ({playbackSpeed}/s)</Label>
+        <Slider
+          id="playback-speed"
+          aria-labelledby="playback-speed-label"
           min={1}
           max={100}
           step={1}
           value={playbackSpeed}
-          onChange={(e) => setPlaybackSpeed(Number(e.target.value))}
+          onValueChange={(v) => setPlaybackSpeed(v as number)}
         />
-      </label>
+      </div>
     </section>
   );
 }

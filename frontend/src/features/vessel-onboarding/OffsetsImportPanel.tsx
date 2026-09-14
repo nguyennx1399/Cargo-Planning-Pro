@@ -3,6 +3,11 @@ import type { HullOffsets, MainParticulars } from "@/types/vessel-geometry";
 import { parseOffsetsCsv, type ParseError } from "@/engine/hull/offsets-csv-parser";
 import { normalizeOffsets, type OffsetsCsvMeta } from "@/engine/hull/offsets-normalizer";
 import { checkOffsetsFairness, type FairnessWarning } from "@/engine/hull/offsets-fairness-check";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { SeverityAlertList } from "@/components/severity-alert-list";
 import { ParticularsForm } from "./ParticularsForm";
 import { FairnessWarningsList } from "./FairnessWarningsList";
 import { BodyPlanView } from "./BodyPlanView";
@@ -63,27 +68,33 @@ export function OffsetsImportPanel() {
       <section>
         <h2>Offsets CSV</h2>
         <div className="field-row">
-          <label className="field">
-            Format
-            <select value={format} onChange={(e) => setFormat(e.target.value as "long" | "wide")}>
-              <option value="long">Long (station,waterline_z,half_breadth)</option>
-              <option value="wide">Wide (station,&lt;wl0&gt;,&lt;wl1&gt;,...)</option>
-            </select>
-          </label>
-          <label className="field">
-            Unit
-            <select value={unit} onChange={(e) => setUnit(e.target.value as "mm" | "m")}>
-              <option value="m">meters</option>
-              <option value="mm">millimeters</option>
-            </select>
-          </label>
+          <div className="grid gap-1.5">
+            <Label htmlFor="csv-format">Format</Label>
+            <Select value={format} onValueChange={(v) => setFormat(v as "long" | "wide")}>
+              <SelectTrigger id="csv-format" className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="long">Long (station,waterline_z,half_breadth)</SelectItem>
+                <SelectItem value="wide">Wide (station,&lt;wl0&gt;,&lt;wl1&gt;,...)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="csv-unit">Unit</Label>
+            <Select value={unit} onValueChange={(v) => setUnit(v as "mm" | "m")}>
+              <SelectTrigger id="csv-unit" className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="m">meters</SelectItem>
+                <SelectItem value="mm">millimeters</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
         <input type="file" accept=".csv,text/csv" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
-        <button className="btn" onClick={() => { setCsvText(wigleySampleCsv); setFormat("long"); setUnit("m"); }}>
+        <Button variant="outline" onClick={() => { setCsvText(wigleySampleCsv); setFormat("long"); setUnit("m"); }}>
           Load Wigley sample (synthetic, analytic — for testing this importer)
-        </button>
-        <textarea
-          className="csv-input"
+        </Button>
+        <Textarea
+          className="font-mono text-xs"
           rows={6}
           placeholder="Or paste CSV here…"
           value={csvText}
@@ -94,11 +105,9 @@ export function OffsetsImportPanel() {
       {result?.kind === "errors" && (
         <section>
           <h2>Parse errors</h2>
-          <ul className="violations">
-            {result.errors.map((err, i) => (
-              <li key={i} className="error">line {err.line}: {err.message}</li>
-            ))}
-          </ul>
+          <SeverityAlertList
+            items={result.errors.map((err) => ({ message: `line ${err.line}: ${err.message}`, severity: "error" as const }))}
+          />
         </section>
       )}
 

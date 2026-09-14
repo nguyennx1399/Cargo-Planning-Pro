@@ -1,9 +1,11 @@
 import { create } from "zustand";
 
 export type ColorMode = "pod" | "weight" | "type";
+export type PaletteMode = "default" | "colorblind";
 
 interface ViewState {
   colorMode: ColorMode;
+  paletteMode: PaletteMode;
   showHull: boolean;
   showOnDeck: boolean;
   showUnderDeck: boolean;
@@ -15,6 +17,7 @@ interface ViewState {
   playbackPlaying: boolean;
   playbackSpeed: number; // containers per second
   setColorMode: (m: ColorMode) => void;
+  setPaletteMode: (m: PaletteMode) => void;
   toggleHull: () => void;
   toggleOnDeck: () => void;
   toggleUnderDeck: () => void;
@@ -34,6 +37,7 @@ interface ViewState {
 // TODO(phase-2): editable plan draft + undo/redo stack (zundo or custom history)
 export const usePlanStore = create<ViewState>((set) => ({
   colorMode: "pod",
+  paletteMode: "default",
   showHull: true,
   showOnDeck: true,
   showUnderDeck: true,
@@ -45,6 +49,7 @@ export const usePlanStore = create<ViewState>((set) => ({
   playbackPlaying: false,
   playbackSpeed: 30,
   setColorMode: (colorMode) => set({ colorMode }),
+  setPaletteMode: (paletteMode) => set({ paletteMode }),
   toggleHull: () => set((s) => ({ showHull: !s.showHull })),
   toggleOnDeck: () => set((s) => ({ showOnDeck: !s.showOnDeck })),
   toggleUnderDeck: () => set((s) => ({ showUnderDeck: !s.showUnderDeck })),

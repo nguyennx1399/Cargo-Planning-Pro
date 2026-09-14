@@ -1,15 +1,22 @@
 import type { Container, PortCall } from "@/types/domain";
-import type { ColorMode } from "@/store/usePlanStore";
+import type { ColorMode, PaletteMode } from "@/store/usePlanStore";
 
 // Discharge-port palette, ordered by rotation sequence (first discharge port first).
 const POD_PALETTE = ["#C8553D", "#E0A030", "#2E8B8B", "#3D5A99", "#7A5195", "#5B8C3A"];
 
-export function podColorMap(ports: PortCall[]): Record<string, string> {
+// Okabe & Ito (2008) qualitative palette — the standard colorblind-safe categorical set,
+// distinguishable under deuteranopia/protanopia/tritanopia (unlike POD_PALETTE, whose
+// red-orange vs green pair is a classic red-green confusion risk for POD mode's 1:1 category
+// distinction). Same length/order convention as POD_PALETTE (index i % length, wraps past 6 ports).
+const POD_PALETTE_COLORBLIND = ["#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00"];
+
+export function podColorMap(ports: PortCall[], paletteMode: PaletteMode = "default"): Record<string, string> {
+  const palette = paletteMode === "colorblind" ? POD_PALETTE_COLORBLIND : POD_PALETTE;
   const out: Record<string, string> = {};
   [...ports]
     .filter((p) => p.sequence > 0)
     .sort((a, b) => a.sequence - b.sequence)
-    .forEach((p, i) => (out[p.locode] = POD_PALETTE[i % POD_PALETTE.length]));
+    .forEach((p, i) => (out[p.locode] = palette[i % palette.length]));
   return out;
 }
 
