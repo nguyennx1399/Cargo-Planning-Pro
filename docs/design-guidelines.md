@@ -6,69 +6,72 @@
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│            Cargo Planner 3D (Header)                │
+│            Cargo Planner 3D (Header)                  │
 ├──────────────────────┬────────────────────────────────┤
 │                      │                                │
 │  Sidebar             │      3D Viewer                 │
-│  (320px)             │      (React Three Fiber)       │
+│  (300px)             │      (React Three Fiber)       │
 │  Scrollable:         │                                │
-│  - Plan info         │      - Canvas (full)           │
-│  - Stability Panel   │      - Hull + Containers       │
-│    (draft/trim/heel/ │      - Waterline reference     │
-│    GM indicators)    │      - Orbit controls          │
-│  - Legend            │      - Gizmo helper            │
-│  - Violations        │                                │
-│  - Loading Sequence  │      (Ship attitude/sinking    │
-│    (Play/Pause/etc)  │       driven by visible cargo) │
+│  - Cargo             │      - Canvas (full)           │
+│  - Project cargo     │      - Hull + Containers       │
+│  - Stability         │      - Waterline reference     │
+│    (draft/trim/heel/ │      - Orbit controls          │
+│    GM indicators)    │      - Gizmo helper            │
+│  - Color by / Show   │      - Slot placeholders       │
+│  - Container         │        + drop ghost            │
+│  - Unplaced          │                                │
+│  - Loading sequence  │      (Ship attitude/sinking    │
+│  - Checks            │       driven by visible cargo) │
 │                      │                                │
 ├──────────────────────┴────────────────────────────────┤
-│                   2D Bay Plan (SVG)                   │
-│                   (200px height, stub)                │
+│                2D Bay Plan (CSS grid)                 │
+│          (bay cross-section, 35% of the stage)        │
 └──────────────────────────────────────────────────────┘
 ```
 
-**CSS Grid setup:**
+**CSS Grid setup** (as in `styles.css`):
 
 ```css
 .layout {
+  position: relative;
   display: grid;
-  grid-template-columns: 320px 1fr;
-  height: 100vh;
-  gap: 0;
+  grid-template-columns: 300px 1fr;  /* sidebar + stage */
+  height: 100%;
 }
 
 .stage {
   display: grid;
-  grid-template-rows: 1fr 200px;
-  grid-template-columns: 1fr 1fr;  /* 50/50 split: 3D + 2D bay plan */
+  grid-template-rows: minmax(220px, 65%) minmax(160px, 35%);  /* 3D over bay plan */
+  min-width: 0;
+  min-height: 0;
 }
 
-.viewport {
-  grid-column: 1 / 2;
-  overflow: hidden;
-  background: #DCE3E9;  /* Light gray for 3D background */
-}
+.viewport { position: relative; min-height: 0; background: var(--stage); }
 
 .bayplan {
-  grid-column: 1 / 3;  /* Span both columns at bottom */
-  border-top: 1px solid #e0e0e0;
-  overflow-y: auto;
-  background: #ffffff;
+  border-top: 1px solid var(--line);
+  background: #fff;
+  padding: 10px 14px;
+  min-height: 0;
 }
 ```
 
 ## Color System
 
-**Palette (from lib/colors.ts, currently stub):**
+**Palette (app tokens, `styles.css`):**
 
-| Use | Color | Hex |
+| Use | Token | Hex |
 |-----|-------|-----|
-| Background (3D) | Light gray | #DCE3E9 |
-| Background (UI) | White | #ffffff |
-| Border | Light gray | #e0e0e0 |
-| Text (primary) | Dark gray | #333333 |
-| Text (secondary) | Medium gray | #666666 |
-| Text (muted) | Light gray | #999999 |
+| Background (3D stage) | `--stage` | #DCE3E9 |
+| Panel background | `--panel` | #F4F6F8 |
+| Border | `--line` | #CBD4DB |
+| Text (primary) | `--ink` | #1D2B36 |
+| Text (muted) | `--ink-soft` | #5E6E7B |
+| OK / clean | `--ok` | #2E7D5B |
+| Signal / accepted-with-warnings | `--signal` | #E0A030 |
+| Error / refused | `--error` | #B83A2E |
+
+The same hexes are mirrored in `lib/colors.ts` (`HIGHLIGHT.valid|warning|invalid`, `DROP_TINT`) so the canvas and the panels agree.
 
 **Color modes (container coloring):**
 
@@ -89,11 +92,12 @@
    - IMDG = red
    - OOG = purple outline
 
-**Violation highlighting (in sidebar):**
+**Violation highlighting (in sidebar "Checks"):**
 
-- **Error (hard constraint):** Red (#cc0000)
-- **Warning (soft objective):** Orange (#ff9900)
-- **Success (no violations):** Green (#00cc00)
+- **Error (hard constraint):** destructive Alert variant (red family) — clickable, selects the container in 3D
+- **Warning (soft objective):** warning Alert variant (amber family)
+- **No violations:** plain ok text (green)
+- A drop that "records" an overridable limit is a warning and shows up in this same list — the amber tint at drop time is a promise this list keeps
 
 ## Typography
 
@@ -119,45 +123,52 @@ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
 **Width:** 320px (fixed on left)
 
-**Sections:**
-1. **Plan Info**
-   - Vessel name, IMO
-   - Voyage ID
-   - Port rotation (compact)
-   - Placements count: "Placed: 148/150 (98.7%)"
+**Sections** (in rendered order):
 
-2. **Legend**
-   - Color mode selector (radio buttons or tabs)
-   - Color/symbol key (3 rows max)
-   - "Show on-deck" / "Show under-deck" / "Show hull" toggles
-   - "Filter by bay" input (or dropdown)
+1. **Header** — vessel name, voyage id, and (when the app offers more than one vessel) the vessel selector. A vessel switch resets the draft and the gesture state.
 
-3. **Stability Panel** (**DEMO/Indicative Data Only**)
+2. **Cargo**
+   - "Load demo cargo" / "Clear cargo (show empty hull)" toggle
+   - Hint text that names the editor gesture ("drag any unplaced box onto a slot below, or clear the cargo to place them yourself")
+
+3. **Project cargo**
+   - "Load project cargo" / "Clear project cargo" (demo items, reference dimensions)
+
+4. **Loading sequence**
+   - Playback controls: ▶ Play | ⏸ Pause | ⟲ Reset buttons
+   - Scrub bar: current container count (e.g., "45 / 150"); speed slider (1–60/s, default 30)
+   - Auto-pauses at the end; a drag start also pauses playback (resuming stays explicit)
+
+5. **Color by**
+   - Color mode (POD / weight / type)
+   - Palette selector (default / colorblind-safe) when colouring by POD
+   - POD legend: one row per port (which is also the port rotation, in sequence order)
+
+6. **Show**
+   - "Show hull" / "Show on-deck" / "Show under-deck" toggles
+   - Bay selector (or arrow-key bay navigation)
+
+7. **Stability (indicative)** (**DEMO/Indicative Data Only**)
    - Live metrics: Draft (m), List (°), Trim (°), GM (m)
    - Status indicator: OK (green) | Warning (orange) | Critical (red) | Out of Range (gray)
    - Refreshes live as playback reveals cargo
    - "Exaggerate angles" toggle (1× real or 5× for visibility)
    - Warning: "DEMO DATA — Verify on approved loading computer"
 
-4. **Violations Panel**
-   - Sort by severity (errors first)
-   - Scrollable list
-   - Click violation → highlight container in 3D
-   - Error count badge (red)
-   - Warning count badge (orange)
+8. **Container**
+   - The selected or hovered box; while a container is in hand, what a drop on the hovered slot would do
+   - Wording matches the drop tint: clean drop / "recorded, not blocked" (a warning the plan-wide report will also list) / refused, with the rule's reason
 
-5. **Loading Sequence Panel**
-   - Playback controls: ▶ Play | ⏸ Pause | ⟲ Reset buttons
-   - Scrub bar: Shows current container count (e.g., "45 / 150")
-   - Speed slider: Containers per second (1–60, default 30)
-   - Timeline: Visual progress bar
-   - Auto-pauses when all containers revealed
+9. **Unplaced (n)**
+   - The drag source AND the single-pointer entry point: mousedown drags, click (or Enter/Space on the focused row) picks
+   - Lists what the current plan has not placed
 
-6. **KPI Summary** (future)
-   - Placed / Unplaced count
-   - Overstow count
-   - Stack weight margin %
-   - Crane split balance
+10. **Checks**
+   - KPI row: Placed / Not placed / Overstows / Rule errors
+   - Violation list styled by severity (capped at 50 shown); click one → highlight that container in 3D
+   - Re-runs on every edit — a drop that "records" an overridable limit shows up here
+
+Footer: "Planning aid only. Verify stability on the approved loading computer."
 
 ### 3D Viewer (Canvas)
 
@@ -179,22 +190,26 @@ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
 **Interaction:**
 - Click container → select (highlight in sidebar)
+- Press a container and drag past a small threshold → MOVE it (the camera must not rotate); release over a valid slot
 - Hover container → tooltip with ID, size, weight, POD (future)
-- Right-click → context menu to move/swap (phase 2)
+- Drag a row in the Unplaced list (or click it once to PICK it — the single-pointer path) → translucent boxes mark every valid slot and a ghost follows the cursor
+- Drop tint is one verdict (`lib/drop-verdict.ts`): **green** = clean, **amber** = accepted but recorded (the checks list will show it), **red** = refused (release places nothing). Wording lives in the sidebar, not on the mesh
+- Esc cancels a drag or pick; Ctrl/Cmd+Z undo, Shift+Ctrl/Cmd+Z (or Ctrl+Y) redo
+- Right-click is reserved for OrbitControls' pan — the move/swap context menu is deferred to Phase D
 
-### 2D Bay Plan (SVG, Stub)
+### 2D Bay Plan (CSS grid)
 
 **Layout:**
-- Horizontal strip at bottom
+- Horizontal strip at bottom, showing a cross-section of ONE bay (chosen in the bay selector)
 - Bay names (02, 04, 06…) as column headers
 - Row labels (01L, 02L, 03L, 04L…) as row headers
-- Slot boxes colored by mode (same as 3D)
-- Sync selection with 3D: click slot → highlight in 3D
+- Slot cells colored by mode (same as 3D); hatch line between decks; weight-by-row bars
+- Sync selection with 3D: click a cell → select in 3D; while an item is in hand, the cells it may go in are outlined and clicking one places it
 
 **Future enhancements (phase 1–2):**
-- Drag-and-drop container move
-- Zoom SVG for detailed view
-- Print to PDF
+- Half-bay (20') drop targets — the 2D plan addresses whole bays only today
+- Drag a container onto the plan directly (a drag release cannot reach a 2D cell; click-to-place is the supported path)
+- Zoom for detailed view; Print to PDF
 
 ## Responsive Design
 
@@ -210,11 +225,11 @@ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
 ## Accessibility (A11y)
 
-**Current (skeleton):** Basic.
+**Current (skeleton): Basic** — plus the editor's WCAG 2.5.7 single-pointer path (click to pick, then click a target — no drag gesture) and the Esc / undo / redo keys. Unplaced rows are real `<button>`s, so Tab + Enter/Space picks.
 
 **To do (phase 2+):**
 - [ ] ARIA labels on interactive elements
-- [ ] Keyboard navigation (Tab, Enter, Arrow keys)
+- [ ] Full keyboard navigation (Tab, Enter, Arrow keys) — arrow-key nudging of a placement is not implemented
 - [ ] Color contrast ratios (WCAG AA minimum 4.5:1)
 - [ ] Screen reader testing (NVDA, JAWS)
 - [ ] Focus indicators visible (:focus-visible)
@@ -227,14 +242,18 @@ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 - Smooth transition (0.2s) to avoid jank
 - Deselect by clicking empty space
 
+**Drop feedback (shipped):**
+- Translucent placeholders on every valid slot while a container is in hand (one InstancedMesh)
+- Ghost follows the cursor, tinted green (clean) / amber (accepted, recorded) / red (refused)
+- Tint and reason text come from a single verdict object, so they can never disagree
+
 **Sidebar transitions:**
 - Slide open/close for future drawer mode (phase 2)
 - Smooth fade for violations list
 
 **Validation feedback:**
-- Real-time (debounced 300ms) as user edits
-- Violations update instantly once backend responds
-- No loading spinner (assuming <100ms latency)
+- Synchronous as the draft changes — the plan-wide checks re-run on the new plan object (no debounce, no network round trip)
+- A rejected drop changes nothing and returns its reasons for the sidebar to show
 
 ## Dark Mode (Future, Phase 2+)
 
@@ -320,7 +339,8 @@ Or: Use Heroicons or Feather icon library for consistency.
 
 **State:**
 - Zustand selectors for granular updates (avoid full re-renders)
-- React Query for server state (plan data cached)
+- Two stores: view state (`usePlanStore`) and the editable plan (`usePlanDraftStore`)
+- Plan data is not fetched: the demo plan is built in the frontend and loaded into the draft store (no React Query query for it)
 
 **Bundle size:**
 - Tree-shake unused Three.js modules
@@ -332,4 +352,4 @@ Or: Use Heroicons or Feather icon library for consistency.
 2. **Responsive breakpoints:** Required for phase 1 or phase 2+?
 3. **Icon library:** Emoji, Heroicons, or custom SVGs?
 4. **Accessibility level:** WCAG A, AA, or AAA target?
-5. **Drag-and-drop:** Phase 1 (keyboard-only) or phase 2 (mouse support)?
+5. **Drag-and-drop:** Resolved — mouse drag AND a single-pointer click-to-pick path (WCAG 2.5.7) both ship in the Phase 2 editor, sharing one commit resolver. Keyboard-only reordering (arrow-key nudging) is not implemented.

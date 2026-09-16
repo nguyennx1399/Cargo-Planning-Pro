@@ -1,7 +1,7 @@
 ---
 title: "Drag-drop cargo onto valid stowage placeholders (Phases A–C)"
 description: "StowageModel foundation, shared placement checks with an editable plan + undo, and container placeholders/drop in the 3D viewer."
-status: pending
+status: in-verification
 priority: P2
 effort: 3.5d
 branch: master
@@ -14,19 +14,25 @@ created: 2026-09-16
 Authoritative spec: `plans/reports/confluence-260916-1647-drag-drop-stowage-placeholders-feature-plan.md` (§4.1–4.7 and §10 are binding for new file names + module boundaries).
 Execution scope this run: **A–C only.** D–E deferred.
 
+**Progress — 2026-09-16 (sync-back).** All three phases of the A–C scope are implemented and verified: **A** tester PASS + code-reviewer 9/10, then **reopened and fixed** for the 20' half-slot defect; **B** code-reviewer 7/10, all findings fixed in a follow-up pass; **C** code-reviewer 7.5/10, both High findings + M1/M3/M4/M6 fixed. Final state: `npm run typecheck` clean, `npm run build` succeeds, **70 files / 541 tests green** (baseline was 56/396). Remaining: the **manual browser click-through** — no DOM test capability exists in this repo, so it cannot be automated; the script is `plans/reports/manual-click-through-260916-phase-c.md` and phase-03's two WCAG/manual-acceptance boxes stay unticked until a human runs it. **D–E remain deferred** (not planned, not started — see "Deferred" below).
+
 ## Phase status
 
 | Phase | File | Scope | Effort | Status |
 |---|---|---|---|---|
-| A | [phase-01-stowage-model-foundation.md](phase-01-stowage-model-foundation.md) | `StowageModel` (types/coords/builder/occupancy); rewrite `breakbulk-deck-area` as thin wrappers | ~1 d | pending |
-| B | [phase-02-placement-checks-and-editable-plan.md](phase-02-placement-checks-and-editable-plan.md) | `canPlaceContainer`/`canPlaceBreakbulk` + `usePlanDraftStore` (undo/redo) + App wiring | ~1–1.5 d | pending |
-| C | [phase-03-container-placeholders-and-drop.md](phase-03-container-placeholders-and-drop.md) | `validSlotsFor`, `SlotPlaceholders`, picker/ghost from the model, commit on drop, 2D click-to-place | ~1.5 d | pending |
+| A | [phase-01-stowage-model-foundation.md](phase-01-stowage-model-foundation.md) | `StowageModel` (types/coords/builder/occupancy); rewrite `breakbulk-deck-area` as thin wrappers | ~1 d est. | **complete + verified** — reviewer 9/10, no critical issues; **reopened and fixed** the same day for the 20' half-slot defect (odd half-bays enumerated; predicate/validator parity at 0 mismatches) |
+| B | [phase-02-placement-checks-and-editable-plan.md](phase-02-placement-checks-and-editable-plan.md) | `canPlaceContainer`/`canPlaceBreakbulk` + `usePlanDraftStore` (undo/redo) + App wiring | ~1–1.5 d est. | **complete + verified** — reviewer 7/10; C1/H1/W1/W3 fixed in a follow-up pass, recorded as deviations 8–13; browser violation-list check unticked (no browser; replaced by `predicate-report-parity.test.ts` + the guard files) |
+| C | [phase-03-container-placeholders-and-drop.md](phase-03-container-placeholders-and-drop.md) | `validSlotsFor`, `SlotPlaceholders`, picker/ghost from the model, commit on drop, 2D click-to-place | ~1.5 d est. | **complete except the manual browser click-through** — reviewer 7.5/10; H1/H2 + M1/M3/M4/M6 fixed; 20' pick volume sized by candidate; the 2 manual-acceptance boxes stay unticked |
+
+Actual effort: all three phases landed **2026-09-16** (same day) against the ~3.5 d estimate.
 
 **Dependencies:** strictly sequential A → B → C. B consumes A's model and occupancy; C consumes B's checks and draft store. Nothing in B or C can start before the phase above it lands and its acceptance is met.
 
 **Deferred — kept on the roadmap, not planned here:**
 - **D — Project cargo placeholders + drop:** `freeRegionsFor`, `AreaPlaceholders`, `AreaDropPlane`, `GhostBreakbulkPreview`, unplaced project-cargo list, R-key 0/90° rotation, deck-vs-hold area selection.
 - **E — Hardening & realism:** hatch-opening check, adjustable tweendeck pontoon levels, mixed stacking/lashing clearances, multi-select + keyboard nudging, magnet snapping (D2b), Playwright, **and deleting the `breakbulk-deck-area.ts` shim once its callers migrate to the model** (Validation Session 1).
+- **Investigate — the single stranded 20' reefer (deferred 2026-09-16, user decision).** BBC SAO PAULO's `DEMU0001136` (20' REEFER, VNSGN→SGSIN, 22.7 t) has **zero** valid slots, which is the "19/20" figure the 20' workstream recorded. Suspicion: the vessel declares reefer plugs only on **even** bays (26/30/34) while `sizeFitsBay` sends 20' boxes to **odd** half-bays — so unless a half-slot inherits its 40' parent's `reefer_tiers` through `plugOk`/`stackFor`, the combination is *structurally* unplaceable rather than merely blocked by a loaded plan. The final tester verified the parity sweep passes (so no silent mismatch), but whether this is correct behaviour or a plug-resolution gap is unresolved. **Owner: Phase D/E.** Evidence: `plans/reports/tester-260916-final-ac-verification.md`; the equal-and-opposite question is whether the parity test's reefer case should assert `valid > 0` per vessel (it would currently fail on BBC, turning the gap red).
+- Also from the final verification, Phase E cleanup: `EmptySlotPicker.tsx`'s comment still quotes the disputed "2400" overlap figure (the plan now records 1520 as correct), and two test-quality findings from the Phase B review remain unfixed — a now-tautological `can-place-breakbulk.test.ts` parity block (the rules it compares against call the predicate), and a zero-coverage assertion in `can-place-container.test.ts` that only exercises its own fixture builder.
 
 ## Supersedes — do not build both
 
@@ -57,7 +63,7 @@ Execution scope this run: **A–C only.** D–E deferred.
 - `*.stowage.json` `cargo_spaces` **exists** (`types/vessel-stowage-spec.ts:178`) and is populated for BBC SAO PAULO.
 - `open_hatch_*` **exists but is not what the spec assumes**: only `open_hatch_draft_m` / `open_hatch_dwt_t` on `VesselParticularsSpec` (`types/vessel-stowage-spec.ts:116-117`) — open-hatch *condition* particulars, not hatch-*opening* dimensions. Phase E's "can it be lowered in?" check has no data source; fallback per spec §5 is skip + warn.
 - The pre-existing failure is NOT deterministic: the suite passes 396/396 today. The cited assertion is `validate-plan.test.ts:66` `expect(ms).toBeLessThan(50)` (not line 65) — a wall-clock perf assertion, so it is flaky by nature. Do not plan to fix it; do not treat an intermittent failure as ours.
-- **No vessel in the app has an odd (20') bay** — BBC builds bays only from `spec.containers.stowage.bays` = [2,6,…,34] (its `twenty_foot_only` is explicitly unplanned) and MV Demo Horizon uses `2 + 4i` = [2,…,38]. So a 20' container has zero valid slots anywhere today. Consequences for Phase C's acceptance are detailed in the Phase C file.
+- **No vessel in the app declares an odd (20') stack bay** — BBC builds bays only from `spec.containers.stowage.bays` = [2,6,…,34] (its `twenty_foot_only` is explicitly unplanned) and MV Demo Horizon uses `2 + 4i` = [2,…,38]. <!-- Corrected 2026-09-16 (20' reopen): the FACT stands, the CONCLUSION below it did not. --> This bullet first concluded "so a 20' container has zero valid slots anywhere today". That consequence was wrong, and it was the defect: the validator's own `bayPosition`/`slotExists` already addresses the odd halves of a 40' bay, so the model was reopened to enumerate them (`stowage-model/slot-enumeration.ts`; demo 800 → 2400 slots, BBC 447 → 1341) and `canPlaceContainer` now agrees with `validatePlan` at **0 mismatches**. `naiveFillPlan` was deliberately left alone, so the demo's 20' boxes still load unplaced — placing them by hand is the feature. See phase-01's Status block and phase-03's corrections.
 
 ## Questions — resolved this run, and still open
 
@@ -117,7 +123,7 @@ Execution scope this run: **A–C only.** D–E deferred.
 - [x] Propagate all four decisions into `phase-01`, `phase-02`, `phase-03` with `Validation Session 1` markers
 - [x] Add the Phase E shim-deletion task to the deferred list in this file and to phase-01's Next Steps
 - [ ] Phase E owner: write the caller-migration + deletion task when E is planned
-- [ ] Phase A implementer: report the BBC violation count explicitly after step 8 (per-stack rule) — this is the gate for decision 2
+- [x] Phase A implementer: report the BBC violation count explicitly after step 8 (per-stack rule) — this is the gate for decision 2 <!-- Tick: gate met 2026-09-16. The loosening changed NO placement (differential harness, both vessels, byte-identical old-vs-new) and `breakbulk-real-vessels-no-violations.test.ts` stayed green; the reviewer independently confirmed "no new violation → the Session-1 revert condition is not met" (`plans/reports/code-reviewer-260916-1930-phase-a-review.md` §"Per-stack loosening"). No revert, no Phase D follow-up needed. -->
 
 #### Impact on Phases
 - **Phase A:** Risk table — the `breakbulkOverlapsContainer` loosening now carries the explicit tie-breaker; "Delete" section and Next Steps note the Phase E handoff; the deprecation banner stays but is time-boxed to E rather than indefinite.

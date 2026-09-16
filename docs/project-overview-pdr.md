@@ -42,9 +42,10 @@
 | F1 | Load demo vessel + random cargo | 1 | ✓ Complete (stub) |
 | F2 | 3D viewer with instanced rendering | 1 | ✓ Complete (stub) |
 | F3 | Color modes (POD, weight, type) | 1 | ✓ Complete |
-| F4 | 2D bay plan SVG view, synced selection | 1 | ○ Stub only |
+| F4 | 2D bay plan view, synced selection | 1 | ✓ Complete (CSS grid, not SVG; also click-to-place) |
 | F5 | BAPLIE import (D.95B, SMDG 2.2/3.1) | 2 | ○ Stub |
-| F6 | Move/swap containers in editor | 2 | ○ Stub |
+| F6 | Move/swap containers in editor | 2 | ✓ Partial — place/move a container by drag or click-to-pick; **swap not implemented**, project-cargo drop deferred to Phase D |
+| F6a | Drag-drop stowage: valid-slot placeholders, three-state ghost (clean / accepted-with-warnings / refused), undo/redo (cap 100), WCAG 2.5.7 click-to-pick | 2 | ✓ Shipped — engine/store unit-tested; the manual browser click-through is the outstanding acceptance step |
 | F7 | Hard constraint validation (7 rules) | 2 | ✓ Partial (5 hard + 1 soft rule; IMDG, stack height, OOG, stability, strength TODO) |
 | F8 | Soft objective tracking (overstows, weight, restows) | 2 | ○ Stub |
 | F9 | Greedy auto-stow | 3 | ✓ Partial (sorts by POD/weight; no rule checks yet) |
@@ -103,7 +104,7 @@
 
 1. **Validator before optimizer:** Anything the solver produces must pass the same rule engine a human plan passes
 2. **One InstancedMesh per container size:** 10k–20k boxes at 60fps; one draw call each
-3. **Zustand state:** Small view state (selection, color mode, filters); plan data in React Query cache
+3. **Zustand state:** Two stores — small view state (selection, color mode, filters, drag/pick gesture) and the editable plan with undo/redo (`usePlanDraftStore`, validate-then-mutate). Plan data is not in the React Query cache.
 4. **FastAPI + Protocol-based solvers:** Easy to add new solver implementations; interface enforced at type level
 5. **BAPLIE (EDIFACT):** Industry standard interchange format; round-trip testing golden files
 

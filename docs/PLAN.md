@@ -26,7 +26,7 @@ pass the same rule engine a human plan passes. The "AI" is layered on top of a c
 - [ ] Color modes: POD, weight, type (reefer/IMDG/OOG), overstow highlight
 - [ ] Bay clipping / "show only bay N", under-deck vs on-deck toggle
 - [ ] Hover tooltip + click select (raycast on InstancedMesh `instanceId`)
-- [ ] 2D bay plan view (SVG), synced selection with 3D
+- [x] 2D bay plan view, synced selection with 3D (built as a CSS grid, not SVG)
 - [ ] Performance check: 20,000 instances @ 60fps
 
 **Exit:** open a BAPLIE, see it in 3D and 2D, inspect any container.
@@ -34,11 +34,11 @@ pass the same rule engine a human plan passes. The "AI" is layered on top of a c
 ## Phase 2 — Manual editor + validation (3–4 weeks)
 
 - [ ] BAPLIE import (EDIFACT D.95B / SMDG 2.2 & 3.1) in `app/io/baplie.py`
-- [ ] Move/swap container (2D drag first; 3D drag optional)
+- [x] Move a container: drag from the Unplaced list, or click-to-pick then click a target (3D placeholder or 2D bay cell); **swap is not implemented**, and project-cargo drop is deferred (Phase D)
 - [ ] Rule engine: slot size compatibility, stack weight, stack height, reefer plug,
       IMDG segregation (simplified table first), overstow count, visibility line
-- [ ] Live violations panel (backend `/validate` endpoint, debounce on edit)
-- [ ] Plan versioning (undo/redo on frontend, saved versions in DB)
+- [x] Live violations panel: validation re-runs on every edit. Runs in the frontend (`engine/validate-plan.ts`); the backend `/validate` endpoint is not called by the demo
+- [x] Undo/redo on the frontend (`usePlanDraftStore`, cap 100); saved versions in DB still pending
 - [ ] BAPLIE export
 
 **Exit:** a planner can fix a plan by hand and see every rule broken in real time.

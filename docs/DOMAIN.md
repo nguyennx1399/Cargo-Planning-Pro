@@ -14,6 +14,7 @@
 - **Scene coordinates:** `x` = longitudinal (bow = +x), `y` = vertical (up), `z` = transverse (starboard = +z)
 - **Ship frame coordinates** (ISO/naval convention): `x` = longitudinal from **aft perpendicular (AP)** toward bow, `y` = from **baseline** upward, `z` = transverse **+starboard**
 - Conversion: See `frontend/src/lib/ship-frame.ts` (`shipToScene`, `sceneToShip`). Phase 0 of [vessel-3d-model-pipeline](../plans/260911-1409-vessel-3d-model-pipeline/plan.md) defines the contract.
+- **Placement footprint `x_m` is NOT ship frame:** `BreakbulkPlacement.x_m` is symmetric about `vessel.length_m / 2` (0 at the stern end, +bow). Convert to scene x only through `engine/stowage-model/coords.ts` (`placementXToSceneX` / `sceneXToPlacementX`) — re-deriving the offset by hand has caused a real bug.
 - Units: meters. 20' = 6.058 m, 40' = 12.192 m, width 2.438 m, height 2.591 m (HC 2.896 m)
 
 ## Hard constraints (target list)

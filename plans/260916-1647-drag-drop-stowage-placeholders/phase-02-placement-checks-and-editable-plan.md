@@ -11,8 +11,25 @@
 
 - **Priority:** P2
 - **Size:** ~1–1.5 days
-- **Status:** pending
+- **Status:** **DONE + VERIFIED 2026-09-16.** Implemented (62 files / 481 tests passing, `npm run build` succeeds, no new dependency), then verified: tester → "PASS as a behaviour-preserving refactor" with one blocking divergence (the overstow over-report); code-reviewer **7/10**. All four review findings fixed in the follow-up pass — C1 (vessel-reselect wedge), H1 (overstow nearest-blocker parity), W1 (`areaId: ""` normalisation), W3 (LOC headroom) — and recorded as deviations 8–13 below. The latent H2 (`twenty_on_forty` missing from the predicate) was closed in the 20' workstream (deviation 13b, now implemented and pinned). Reports: `plans/reports/tester-260916-1955-phase-b-verification.md`, `plans/reports/code-reviewer-260916-1955-phase-b-review.md`.
 - **Blocks:** Phase C (which calls `canPlaceContainer` for placeholders, ghost tint and commit).
+
+**Deviations from this file, approved 2026-09-16 (Phase B implementation).** <!-- Updated: Phase B implementation -->
+1. **A trailing `vessel` parameter on both predicates** — `canPlaceContainer(model, plan, container, slot, vessel)`, `canPlaceBreakbulk(model, plan, item, pose, vessel)`. Forced: `StowageModel` carries no vessel (no `reefer_tiers` for `plugOk`, no `rows`/`bays`/`container_layout`) and `containerOccupancy` takes a `Vessel`. Phase C patches its two call sites; `validSlotsFor` becomes `(vessel, plan, container)`.
+2. **`loadPlan(vessel, plan)`** — the store runs the predicates, so it needs the vessel (spec §4.7 sketched `loadPlan(plan)`). Vessel change calls `loadPlan(null, null)` synchronously, which is what stops the old vessel's containers being rendered/weighted against a new hull.
+3. **Per-slot stability warnings are NOT implemented** (spec §4.5 listed "warnings only: stability"). A per-slot stability reason needs geometry + hydrostatics + lightship — unavailable to a pure predicate and outside the per-slot cost budget. The StabilityPanel covers stability plan-wide. `overstow` warnings *are* implemented, both directions (candidate buried / candidate burying).
+4. **D1 severity is deliberately split from report severity.** `breakbulk_overweight` and `breakbulk_over_pressure` are `warning` for the *drop* decision (droppable-with-record) while the plan-wide report keeps reporting them as `error`, because its message strings are frozen. Phase C must therefore tint **three** states (green / amber / red) — see the tint rule in phase-03. `stack_weight` stays `error` on purpose so the ghost never promises a slot the report blocks. <!-- Done in Phase C part 1: `HIGHLIGHT.valid/warning/invalid` driven by one verdict object. -->
+5. **`breakbulkOverlap`'s frozen 3-arg signature** has no vessel, so its wrapper passes a documented `NO_VESSEL` placeholder that is provably unread (the predicate skips the vessel-dependent check when `plan.placements` is empty).
+6. **`teuOf` is unused** by any §4.5 per-slot check; importing it would be dead code. Reused instead: `sizeFitsBay`, `tierBelow`, `plugOk`, `bayPosition`/`deckOf`/`isFortyBay`, `breakbulkOccupancy`, `containerOccupancy`, `footprintRect`/`rectsOverlap`, the model barrel.
+7. **Measured perf:** a full sweep of BBC's 447 real slots with the demo load is ≈**1.05 ms** (≈2.35 µs/slot), dominated by building `no_floating` tooltip strings for the ~437 blocked slots — above the spec's "well under a millisecond" aspiration. Phase C must memoise per drag start and build tooltip strings lazily for the hovered slot only. <!-- Done in Phase C: per-gesture memos + a one-slot hover path (`lib/drop-verdict.ts`); note the 20' reopen grew BBC's grid to 1341 slots, so the same sweep now measures ≈2-6 ms (clock guard 50 ms, `placeholders.test.ts:153-160`). -->
+
+**From the Phase B code review (`plans/reports/code-reviewer-260916-1955-phase-b-review.md`), fixes applied 2026-09-16.** <!-- Updated: Phase B review fixes -->
+8. **`overstow` reproduces the plan rule's NEAREST-blocker selection, not just its wording** (review H1 — decided: reproduce the rule). The predicate paired the candidate with *every* higher-POD box in its column, while `validation-rules.ts:128-141` names only the nearest blocker above each lower box, so the ghost could blame a box the violations list never mentions. Measured on the app's own default plan/toggles: **BBC 36 → 36** pairs (was 54, +18 over-reported; 16 of 36 lower boxes named a different blocker), **demo-horizon 199 → 199** (was 298, +99; 75 lower boxes). After: 0 report-only, 0 predicate-only, per-lower-box blocker identity exact on both vessels. `overstowReasons` (now `engine/placement/placement-reason-builders.ts`) rebuilds the rule's own half-column — sorted bottom → top as `buildValidationContext` does, candidate inserted at its commit position — and keeps only the pairs that name the candidate. `predicate-report-parity.test.ts` pins both counts on the real plans; a 3-box column test pins the selection rule where nearest ≠ every box above.
+9. **`areaId: ""` is normalised once** (review W1): one `areaKey = pose.areaId || WEATHER_DECK_AREA_ID` used for the area lookup, the `containerOccupancy` lookup, the overlap grouping and the label/band wording. The raw id let a preview called with `areaId: ""` skip the container-stack check — and print the hold wording — that the same drop committed through the store (which stores no `area_id`) then runs. No producer writes `""` today, so no existing message changes; a parity test covers it.
+10. **W3 headroom:** reason/message builders extracted to `engine/placement/placement-reason-builders.ts` (83 LOC); `can-place-container.ts` **198 → 164**, `can-place-breakbulk.test.ts` **199 → 192**, `canPlaceContainer`'s behaviour unchanged.
+11. **§4.5's breakbulk warning "source: `generic` area (approximate), hatch opening not checked yet" is NOT implemented** (review W2) — it was dropped without a deviation entry. `StowageArea.source` exists for it (`stowage-model/types.ts:35`) and Phase D badges those areas, so deferring is intended but was undocumented until now.
+12. **Two known, unreachable deltas inside the frozen-message contract** (review W4/W5), recorded rather than fixed: (a) duplicate `cargo_id` placements change the overlap set and wording (`can-place-breakbulk.ts` skips `other.cargo_id === item.id`, so "A overlaps A" disappears, and the id named first follows plan order) — unreachable through the store's strip-then-add and through the packer; (b) violation ORDER *within* one rule follows plan order instead of area-group order (set-identical; no test pins the order).
+13. **Follow-ups booked, not done here:** (a) `App.tsx`'s C1 fix is the minimal early return (`if (id === vesselId) return;`) — **landed and still the shipped form**; the cleaner single reload path — build + `loadPlan` inside the handler and delete the reload effect — is deferred to Phase C/D. <!-- 2026-09-16: Phase C did not take it, so it now belongs to D/E. --> (b) ~~`twenty_on_forty` is missing from `canPlaceContainer` (review H2, latent false green): unreachable today because neither app vessel has an odd stack bay and `sizeFitsBay` blocks every 20' placement first; phase-03 already books it and asserts `validSlotsFor(20') === []`.~~ **CLOSED in the 20' workstream (2026-09-16):** the predicate now emits `twenty_on_forty` for the halves a 20' candidate covers (`placement-reason-builders.ts:41-57`; severity `error` in `reason.ts:71`), pinned by `can-place-container.test.ts:137-161`. It was reachable only once the odd half-bays existed — which is exactly what the reopen did. (c) ~~Phase C must strip a placed box's own placement before previewing a move (review W9), exactly as the store does.~~ **Done in Phase C:** `lib/drop-verdict.ts:69-85` (`subjectStrippedPlan`, memoised per `(plan, candidate)`), measured 0 fresh-drop verdict mismatches on both real vessels (Phase C review §4).
 
 Two deliverables: ONE pure predicate per cargo kind shared by placeholders, drop preview and full-plan validation; and a mutable plan with undo/redo to commit into. Until the draft store exists there is nothing for a drop to write to (`usePlanStore.ts:51-52` says so explicitly).
 
@@ -41,7 +58,11 @@ Two deliverables: ONE pure predicate per cargo kind shared by placeholders, drop
 
 **The one rule that needs care: `breakbulkOverweight` is band-based, not per-item.** It walks `bandStart` from `area.xMin` in 20 m steps and sums the weight of every item whose `x_m` lands in the band (`:114-136`). A per-candidate check must evaluate *the band that contains the candidate* with the candidate added — which needs the other placements in that area. That is exactly why spec §4.4 defines `breakbulkOccupancy`; use it, and keep the `rating ? rating × 20 × (zMax − zMin) : 200` limit formula.
 
-**No mutation path exists anywhere today.** `usePlanStore` is view state only and holds `hoveredSlot`/`draggingContainerId` (`:18-22`), cleared by `resetForVesselChange` (`:95-104`). Phase B adds a **separate** `usePlanDraftStore` per spec §4.7 — do not fold it into `usePlanStore`, whose shallow-selected subscriptions (`Sidebar.tsx:37-54`, `ContainerInstances.tsx:32-46`) exist to avoid re-render storms.
+**Code-review guardrails from Phase A (carry these into this phase).** <!-- Updated: Phase A code review, 2026-09-16 -->
+- **Keep `Vessel` immutable.** `buildStowageModel` caches by object identity in a `WeakMap` and never invalidates. `App.tsx` holds catalog objects (`getVesselCatalogEntry` memoises by id), so mutating one would leave a stale model for the whole process. A `usePlanDraftStore` action must never patch a vessel — only plans. (Spec §9's optional dev `Object.freeze` was deliberately not added; see `build-stowage-model.ts`'s header.)
+- **Don't mutate `StowageArea.keepOuts`.** The model hands out the vessel's own arrays (`build-stowage-model.ts:48,85`). Read-only use is fine; sorting/filtering in place would poison every other reader of the cached model. Copy first if you must reorder.
+- **Use the barrel.** `engine/stowage-model/index.ts` exists and is currently imported by nothing — import from `@/engine/stowage-model` in this phase so the single entry point is real rather than decorative (or delete it; do not leave it unused).
+- `breakbulk-deck-area.ts` remains the sanctioned surface for the six legacy callers; new code should read `buildStowageModel(vessel)` directly.
 
 **`App.tsx:43-50` is the wiring to move:** `plan` is a `useMemo` over `cargoLoaded`/`projectCargoLoaded`/`vessel`, then `validatePlan(vessel, plan)` memo, then `useIndicativeStability(vessel, plan, playbackCount)`. Build the demo plan once per (vessel, toggles) and `loadPlan` it; `report`, `attitude`, `VesselScene`, `Sidebar`, `BayPlanView` all read the draft plan. `getVesselCatalogEntry` memoises the vessel object, so `vessel` identity is stable — a `useEffect` keyed on `[vessel]` will not loop.
 
@@ -52,8 +73,8 @@ Two deliverables: ONE pure predicate per cargo kind shared by placeholders, drop
 ## Requirements
 
 **Functional**
-- `canPlaceContainer(model, plan, container, slot) → {ok, reasons: Reason[]}` implementing the spec §4.5 list.
-- `canPlaceBreakbulk(model, plan, item, {areaId, x_m, z_m, rotation}) → {ok, reasons: Reason[]}` implementing the 7 existing breakbulk rules for a single candidate item.
+- `canPlaceContainer(model, plan, container, slot) → {ok, reasons: Reason[]}` implementing the spec §4.5 list. <!-- As shipped: a trailing `vessel` argument, see deviation 1 -->
+- `canPlaceBreakbulk(model, plan, item, {areaId, x_m, z_m, rotation}) → {ok, reasons: Reason[]}` implementing the 7 existing breakbulk rules for a single candidate item. <!-- As shipped: a trailing `vessel` argument, see deviation 1 -->
 - `Reason = {rule, message, severity}` with severity configurable per rule (D1): hard physical rules (`breakbulk_out_of_deck_area`, overlap, keep-out, slot size) → `error`/block; overridable limits (overweight band, over-pressure, overstow) → `warning`/allow-with-record.
 - `breakbulk-validation-rules.ts` becomes a loop over `canPlaceBreakbulk`, same exports, same ids, same messages.
 - `usePlanDraftStore`: `plan`, `past`, `future` (capped at 100, plain arrays, no library); `loadPlan`, `placeContainer`, `moveContainer`, `unplaceContainer`, `placeBreakbulk`, `moveBreakbulk`, `unplaceBreakbulk`, `undo`, `redo`. Mutating actions run the predicate first and return a `Result`; an invalid move mutates nothing.
@@ -117,20 +138,20 @@ Validator-first invariant: placeholders (Phase C), the drop preview tint and the
 
 ## Todo List
 
-- [ ] Read the 4 rule/context/check files; record the exact violation message strings
-- [ ] `engine/placement/reason.ts`: `Reason`, `PlacementResult`, D1 severity table
-- [ ] `can-place-container.ts`: slot exists, empty, size, support-below, plug, stack weight, max height, breakbulk footprint
-- [ ] `can-place-container.ts`: warning-severity overstow/stability reasons (non-blocking)
-- [ ] `can-place-breakbulk.ts`: area exists, inside rect, keep-out, breakbulk overlap, container-stack overlap, height, footprint pressure, 20 m band
-- [ ] `breakbulk-validation-rules.ts` loops `canPlaceBreakbulk`; 7 exports, ids and messages unchanged
-- [ ] `usePlanDraftStore.ts`: `loadPlan`, place/move/unplace for both kinds, `undo`/`redo`, 100-entry cap
-- [ ] Store actions reject invalid moves with reasons and leave the plan untouched
-- [ ] `unplaced` derived from `containers` − `placements` on every mutation
-- [ ] `App.tsx`: demo plan → `loadPlan`; `report`/`attitude`/scene/sidebar/bayplan read the draft plan
-- [ ] `resetForVesselChange` clears drag state; `onVesselChange` resets the draft
-- [ ] Unit tests for both predicates + the draft store (no React render)
-- [ ] `npm run typecheck` clean; `npm test` 396/396 (existing) + the new tests
-- [ ] Browser check: both vessels' violation list identical count/messages to pre-phase
+- [x] Read the 4 rule/context/check files; record the exact violation message strings
+- [x] `engine/placement/reason.ts`: `Reason`, `PlacementResult`, D1 severity table
+- [x] `can-place-container.ts`: slot exists, empty, size, support-below, plug, stack weight, max height, breakbulk footprint
+- [x] `can-place-container.ts`: warning-severity overstow reasons (non-blocking) — **stability warnings deliberately NOT implemented**, see deviation 3
+- [x] `can-place-breakbulk.ts`: area exists, inside rect, keep-out, breakbulk overlap, container-stack overlap, height, footprint pressure, 20 m band
+- [x] `breakbulk-validation-rules.ts` loops `canPlaceBreakbulk`; 7 exports, ids and messages unchanged (including the pairwise dedup and the band's float-stepping arithmetic)
+- [x] `usePlanDraftStore.ts`: `loadPlan`, place/move/unplace for both kinds, `undo`/`redo`, 100-entry cap
+- [x] Store actions reject invalid moves with reasons and leave the plan untouched (asserted byte-identical)
+- [x] `unplaced` derived from `containers` − `placements` on every mutation
+- [x] `App.tsx`: demo plan → `loadPlan`; `report`/`attitude`/scene/sidebar/bayplan read the draft plan
+- [x] `resetForVesselChange` clears drag state; `onVesselChange` resets the draft. **No functional change was needed — the committed baseline already cleared both fields**, so only the stale comments were corrected
+- [x] Unit tests for both predicates + the draft store (no React render) — 43 new tests
+- [x] `npm run typecheck` clean; `npx vitest run` **481/481** (was 438) with all four guard files green
+- [ ] Browser check (both vessels' violation list identical count/messages) — **not performed: no browser and no DOM test capability.** Substitutes: the 4 guard files pass unchanged, a predicate-⊆-rules parity test, and a successful `npm run build`. The new App wiring's runtime behaviour (loading frame on vessel switch, draft-driven render) remains unverified — flag to the tester/reviewer. <!-- 2026-09-16: the App wiring was subsequently exercised by the Phase C work; the violation-list-identity half is pinned by `engine/placement/__tests__/predicate-report-parity.test.ts` and the run-level manual script (plans/reports/manual-click-through-260916-phase-c.md, step 3) — still not executed by a human, so this box stays unticked. -->
 
 ## Success Criteria
 

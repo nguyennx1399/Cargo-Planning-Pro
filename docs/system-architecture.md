@@ -20,13 +20,13 @@
 │           │  - selection (hoveredId)    │                                   │
 │           │  - filters (bayFilter)      │                                   │
 │           │  - showOnDeck/UnderDeck     │                                   │
+│           │  - drag/pick gesture        │                                   │
 │           └─────────────┬───────────────┘                                   │
 │                         ↓                                                   │
 │           ┌─────────────────────────────┐                                   │
-│           │ React Query Cache (Plan)    │                                   │
-│           │ - queryKey: ["plan", "demo"]│                                   │
-│           │ - queryKey: ["vessel", id]  │                                   │
-│           │ - queryKey: ["validate"]    │                                   │
+│           │ Plan Draft Store            │                                   │
+│           │ - plan + undo/redo          │                                   │
+│           │ - validate-then-mutate      │                                   │
 │           └─────────────┬───────────────┘                                   │
 │                         ↓                                                   │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -459,12 +459,29 @@ interface ViewState {
 }
 ```
 
-**React Query cache:**
+**Two stores, distinct ownership.** `usePlanStore` is view state only (above); the **editable plan** lives in `usePlanDraftStore` — the only place the UI mutates a plan.
+
 ```typescript
-queryKey: ["plan", "demo"]         // useQuery plan data
-queryKey: ["vessel", vessel_id]    // useQuery vessel data
-queryKey: ["validate", plan_id]    // useQuery validation report
+interface PlanDraftState {
+  vessel: Vessel | null;                  // the vessel the plan belongs to (checks need it)
+  plan: StowagePlan | null;
+  past: StowagePlan[]; future: StowagePlan[];  // undo/redo history, HISTORY_CAP = 100
+  loadPlan(vessel, plan): void;           // demo/vessel switch; resets history
+  placeContainer(id, slot): PlacementResult;   // = moveContainer (one implementation)
+  unplaceContainer(id): void;
+  placeBreakbulk(id, pose): PlacementResult;   // = moveBreakbulk
+  unplaceBreakbulk(id): void;
+  undo(): void; redo(): void;
+}
 ```
+
+Invariants: **validate-then-mutate** (a rejected action returns its reasons and changes nothing — no new plan object, no history entry); plans are **never mutated in place** (each action builds a new `StowagePlan`, which keeps history entries valid and lets the engine memoise by plan identity); `unplaced` is **derived** as `containers − placements` on every mutation; `setPicked`/`setDraggingContainer` are mutually exclusive.
+
+Gesture state (`hoveredSlot`, `draggingContainerId`, `pickedId`) is view state and stays in `usePlanStore`; `commit-placement.ts` is the ONE resolver both drop triggers (drag release, click-to-pick) go through, and `features/panels/use-stowage-keyboard-shortcuts.ts` binds Ctrl/Cmd+Z, Shift+Ctrl/Cmd+Z (and Ctrl+Y), Esc.
+
+**Placement checks (`engine/placement/`):** one predicate per cargo kind — `canPlaceContainer` and `canPlaceBreakbulk` — shared by the drop preview, the placeholders and the full-plan validation (the repo's "validator before optimizer" principle). Rule ids and messages are the same ones `engine/validation-rules.ts` / `engine/breakbulk-validation-rules.ts` emit; `breakbulk-validation-rules.ts` now loops over `canPlaceBreakbulk`.
+
+**React Query:** the provider is still mounted in `main.tsx`, but no query loads plan data any more — the demo plan is built in the frontend and loaded into the draft store. `api/client.ts` currently has no importers; `POST /api/validate` / `/api/stowage/solve` remain the backend contract.
 
 ## 3D Rendering Pipeline
 
@@ -474,7 +491,7 @@ queryKey: ["validate", plan_id]    // useQuery validation report
    - WaterlineReference mesh updates with attitude
    - **Angles exaggerated 5× for visibility (toggle via `exaggerate` state)**
 2. Render hull: Parametric L1 (phase 2: `engine/hull/` modules) or GLTF model (L2, phase 4)
-3. Render ContainerInstances (InstancedMesh per size; filtered by `playbackCount` state for loading sequence)
+3. Render ContainerInstances (InstancedMesh per size; filtered by `playbackCount` state for loading sequence) — plus, while a container is in hand, `SlotPlaceholders` (valid slots) and `GhostContainerPreview` (the cursor box)
 4. Render BreakbulkCargoInstances (custom mesh per cargo; deck-positioned by x/z footprint + rotation; filtered by playback)
 5. OrbitControls + GizmoHelper for navigation
 6. Raycast on InstancedMesh for selection
@@ -501,6 +518,11 @@ queryKey: ["validate", plan_id]    // useQuery validation report
 - One InstancedMesh per size → 1–2 draw calls total (vs. 10k+)
 - Each instance stores: position (bay/row/tier → x/y/z), color (POD/weight/type), selected state
 
+**Drop affordances (Phases A–C):**
+- `SlotPlaceholders.tsx`: one InstancedMesh of translucent boxes on every valid slot while a container is dragged or picked, built from `validSlotsFor` (memoised) — a hint layer, `raycast={() => null}`, so it never steals the pick
+- `GhostContainerPreview.tsx`: the box that follows the cursor, tinted from `DROP_TINT` (green clean / amber accepted-and-recorded / red refused); the tint and the sidebar reason both come from `lib/drop-verdict.ts`, i.e. from the same `canPlaceContainer` gate the commit runs
+- Starting a drag pauses playback (D3) and clears any pick; the two gestures are mutually exclusive
+
 **Breakbulk cargo rendering:**
 - Each breakbulk cargo rendered as custom mesh (wind turbine blade/nacelle/tower, yacht, etc.)
 - Positioned on deck via x/z footprint (length_m/2-symmetric), rotated by `rotation_deg`
@@ -520,6 +542,7 @@ Units: meters; 20' = 6.058m, 40' = 12.192m, container width = 2.438m, height = 2
 - Intersect with all InstancedMesh objects
 - Get instanceId → lookup container → update usePlanStore.selectedId
 - Sidebar highlights violations for selected container
+- An empty slot under the cursor resolves to `hoveredSlot` and (with a container in hand) is the drop target: the same click commits it via `commitPlacement` — the trigger used by the WCAG 2.5.7 click-to-pick path
 
 ## Indicative Stability & Ship Attitude (**DEMO DATA ONLY**)
 
@@ -583,6 +606,8 @@ Slot(bay=02, row=00, tier=82)
   → z = rowCenterZ(00) 
   → [x, y, z] in meters
 ```
+
+**Placement footprints (`x_m`):** `BreakbulkPlacement.x_m` is symmetric about `length_m / 2` (0 at the stern end, +bow) and is deliberately NOT the AP-referenced ship frame. The conversion to scene x is a pure translation, owned solely by `frontend/src/engine/stowage-model/coords.ts` (`placementXToSceneX` / `sceneXToPlacementX`); never re-derive the offset in a producer or consumer. Slot footprints likewise come from the stowage model's `SlotDef.rect`, not from a local re-derivation.
 
 ## Deployment Architecture (Local & Docker)
 

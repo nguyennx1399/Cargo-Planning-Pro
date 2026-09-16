@@ -11,7 +11,8 @@
 
 - **Priority:** P2
 - **Size:** ~1 day
-- **Status:** pending
+- **Status:** **DONE + VERIFIED 2026-09-16, then REOPENED the same day for a defect found in Phase B verification.** tester verdict PASS (438/438 across two consecutive runs, all six named guards green with unmodified test/snapshot files, changed rule proven still able to fire); code-reviewer verdict 9/10, no critical issues, with differential harnesses proving no shim drift (135 comparisons vs the pre-refactor implementation, 0 diffs) and byte-identical packer output old-vs-new. Reports: `plans/reports/tester-260916-1930-phase-a-verification.md`, `plans/reports/code-reviewer-260916-1930-phase-a-review.md`.
+- **REOPENED — 20' half-slots missing (user decision 2026-09-16).** `slotDefs` enumerates slots from `allSlots(vessel)` → `vessel.stacks[].bay`, which holds only EVEN (40') bays, while `slot-helpers.ts:30-35` `bayPosition` maps an ODD bay onto its parent 40' bay's fore/aft half and `validation-rules.ts`'s `slotExists` accepts those. Measured consequence: `canPlaceContainer(20' @ bay 3)` → blocked `slot_exists`, `validatePlan` for the identical placement → clean — the predicate and the report disagree, breaking this plan's own validator-first invariant. Not a corner case: 400 of 886 demo containers are 20' and all are unplaced (BBC: 20 of 130), and a 20' box gets **0 valid slots with all 447 blocked by `size_fits_bay`**. Three signals say the halves are real: the repo's own odd-bay addressing (`bayPosition`/`sizeFitsBay`/`twentyBaysOf`), the spec's Phase C acceptance line about 20' boxes, and the spec's perf note "~900 slot-tiers" for BBC. **Decision: enumerate the 20' half-slots in the model** (drop path only — the auto-fill packer `naiveFillPlan` is NOT to be changed; the demo's 400 unplaced 20' boxes staying unplaced on load is expected, and a planner can now place them by hand, which is the feature). **Fixed and closed the same day** — odd half-bays enumerated (demo 800 → 2400 slots, BBC 447 → 1341), odd-bay geometry in `lib/geometry.ts`, parity-sized footprints in `occupancy.ts`, `twenty_on_forty` added to the predicate; predicate/validator parity **0 mismatches** on both vessels for 20'/40'/20'-reefer. The 438/438 figure above predates the reopen; the run-level final state is **70 files / 541 tests green** (recorded in phase-03).
 - **Blocks:** Phase B and Phase C (both consume the model).
 
 Behaviour-preserving refactor. After this phase the app must render BBC SAO PAULO and MV Demo Horizon exactly as before, with the single exception that project cargo may now fit beside container stacks (per-stack footprints instead of whole-bay x-zones).
@@ -30,7 +31,7 @@ Behaviour-preserving refactor. After this phase the app must render BBC SAO PAUL
 
 **Generic-deck margins are exact constants to reproduce:** `BOW_MARGIN_FRACTION = 0.15`, `STERN_MARGIN_FRACTION = 0.15`, `BEAM_MARGIN_M = 1.5` (`breakbulk-deck-area.ts:18-20`), giving `x ∈ [0.15·LOA, 0.85·LOA]`, `z ∈ ±(beam/2 − 1.5)`. Spec §4.2 says the same in words; copy the arithmetic verbatim from the existing function rather than retyping it.
 
-**Slot geometry sources — do not invent new ones.** `allSlots(vessel)` (`engine/all-slots.ts:7-14`) expands `vessel.stacks` (each `StackSpec` lists its valid `tiers` for one bay+row+deck). `slotToPosition(vessel, slot)` (`lib/geometry.ts:88-97`) returns `[bayCenterX, tierCenterY, rowCenterZ]`. Spec §4.1 requires `SlotDef.center` to be *identical* to `slotToPosition` — so compute it by calling it.
+**Slot geometry sources — do not invent new ones.** `allSlots(vessel)` (`engine/all-slots.ts:7-14`) expands `vessel.stacks` (each `StackSpec` lists its valid `tiers` for one bay+row+deck). `slotToPosition(vessel, slot)` (`lib/geometry.ts:88-97`) returns `[bayCenterX, tierCenterY, rowCenterZ]`. Spec §4.1 requires `SlotDef.center` to be *identical* to `slotToPosition` — so compute it by calling it. <!-- Corrected 2026-09-16 (20' reopen): `allSlots` covers the EVEN bays only; the model's slot source is now `slotDefs(vessel, areas)` (`stowage-model/slot-enumeration.ts`), which adds the odd halves `bayPosition` maps onto each 40' stack bay. `slotToPosition` is still the centre function for both parities. -->
 
 **`bayCenterXVesselRelative` in `breakbulk-forbidden-zones.ts:20-26` is a third copy of the bay-x math** (declared `container_layout.bay_center_x_m`, else the LOA/bowMargin/pitch fallback) and deliberately ignores the calibrated `geometry.bay_lcg_m` path that `lib/geometry.ts:56-59` has. That duplicate is exactly the "re-derived in several places" gap the spec's §3 names. The model owns it from now on; forbid-zones is deprecated after callers migrate.
 
@@ -43,7 +44,7 @@ Behaviour-preserving refactor. After this phase the app must render BBC SAO PAUL
 - `buildStowageModel(vessel)` + `WeakMap` cache; optional dev-only `Object.freeze` on built vessels (spec §9).
 - `areasAt(model, x_m, z_m, onDeck?)` — resolves a drop point to candidate areas; several can match (hatch cover over tank top), the deck toggle disambiguates.
 - `coords.ts` is the ONLY home for scene↔`x_m` offsets: `placementXToSceneX`, `sceneXToPlacementX`, `placementToScene(x_m, z_m, surfaceY, lift)`, `rectFromCenter`, `rectContainsPoint`, `rectContainsRect`, `snap(value, step)`.
-- `occupancy.ts`: `occupiedStacks(vessel, placements)` (one footprint per bay/row/deck that actually carries a container — reads *placements*, never capacity), `containerOccupancy(vessel, placements) → Map<areaId, OccupiedStack[]>`, `breakbulkOccupancy(cargo, placements) → Map<areaId, Rect[]>`.
+- `occupancy.ts`: `occupiedStacks(vessel, placements)` (one footprint per bay/row/deck that actually carries a container — reads *placements*, never capacity; **corrected 2026-09-16:** each footprint's length follows its bay's parity — `isFortyBay ? DIM.len40 : DIM.len20` — so a 20' in an odd bay blocks one half of its parent cell), `containerOccupancy(vessel, placements) → Map<areaId, OccupiedStack[]>`, `breakbulkOccupancy(cargo, placements) → Map<areaId, Rect[]>`.
 - On-deck stacks block the weather deck; under-deck stacks block every hold area they overlap (a column passes through the tweendeck above the tank top); an undeclared row blocks the full beam (conservative fallback, spec §4.4).
 - `naiveFillBreakbulk` gains `occupiedRects?: Record<areaId, Rect[]>`, seeded into `placedRects` per area; keeps the positional `forbiddenXZones` param for backward compatibility (`engine/__tests__/breakbulk-real-vessels-no-violations.test.ts:27` passes `[]`). Iterate hold areas from the model.
 - `build-demo-plan.ts` `withBreakbulkCargo` switches to `occupiedRectsByArea(vessel, plan.placements)` instead of whole-bay x-zones.
@@ -78,7 +79,7 @@ coords.ts    ──> the only scene↔x_m offset home (mesh builder, weight item
 
 **`areaId` assignment rules (spec §4.2):** on-deck slot overlapping the weather-deck rect → weather deck; under-deck slot whose *centre* falls in a hold area → that hold; otherwise `null`. On-deck vs under-deck is `tier >= 80` (the existing `ON_DECK_TIER_THRESHOLD` in `breakbulk-forbidden-zones.ts:9` and `validation-rules.ts`'s tier convention).
 
-**Slot footprint:** 40' × 2.438 m in plan view per spec §4.2. No vessel in the app has an odd bay (see Phase C), so a constant 40' footprint is correct today — carry a one-line TODO comment rather than branching for 20' now (YAGNI).
+**Slot footprint:** 40' × 2.438 m in plan view per spec §4.2. <!-- Corrected 2026-09-16 by the 20' reopen. --> This paragraph originally read "No vessel in the app has an odd bay (see Phase C), so a constant 40' footprint is correct today — carry a one-line TODO comment rather than branching for 20' now (YAGNI)." **That assumption was the defect.** The validator's own `bayPosition`/`slotExists` address the odd (20') *halves* of a 40' bay, so the model now enumerates them: `slot-enumeration.ts` emits each stack bay's odd neighbours alongside the even bay, `lib/geometry.ts` handles odd-bay centres and declared deck bases, and `occupancy.ts:26-28` sizes each footprint by its slot's own parity (`isFortyBay ? DIM.len40 : DIM.len20`). `allSlots(vessel)` (even bays only) is no longer the model's slot source — see the Status block above.
 
 ## Related Code Files
 
@@ -89,6 +90,7 @@ coords.ts    ──> the only scene↔x_m offset home (mesh builder, weight item
 - `frontend/src/engine/stowage-model/occupancy.ts` — three occupancy functions.
 - `frontend/src/engine/stowage-model/index.ts` — barrel.
 - `frontend/src/engine/stowage-model/__tests__/coords.test.ts`, `build-stowage-model.test.ts`, `occupancy.test.ts` (pure-engine unit tests, this phase).
+- **Added by the 20' reopen:** `frontend/src/engine/stowage-model/slot-enumeration.ts` (odd half-bays) with `__tests__/slot-enumeration.test.ts`, `__tests__/half-slot-geometry.test.ts`, `__tests__/half-slot-occupancy.test.ts`; `engine/placement/__tests__/twenty-foot-slot-parity.test.ts` holds the predicate/validator parity.
 
 **Modify**
 - `frontend/src/engine/breakbulk-deck-area.ts` — rewrite as wrappers over the model; public signatures unchanged.
@@ -107,7 +109,7 @@ coords.ts    ──> the only scene↔x_m offset home (mesh builder, weight item
 1. Read `engine/breakbulk-deck-area.ts`, `lib/geometry.ts`, `types/domain.ts` (`BreakbulkDeckLayout`, `BreakbulkHoldArea`, `BreakbulkPlacement`, `ContainerLayout`) and `engine/vessel-spec/deck-layout-from-spec.ts` end to end before writing anything; the x_m convention comment on `BreakbulkPlacement` (`types/domain.ts:138-146`) is the contract.
 2. Write `stowage-model/types.ts` exactly per spec §4.1. Reuse the domain type names (`BreakbulkKeepOut`, `Rect` from `engine/breakbulk-overlap-check.ts`) instead of redeclaring them (DRY).
 3. Write `stowage-model/coords.ts`: `placementXToSceneX(x_m, lengthM) = x_m - lengthM / 2` and its inverse (this is the inversion `breakbulk-mesh-builder.ts:27-29` and `lib/breakbulk-weight-item.ts:15` already do by hand — make it one function), plus `placementToScene`, `rectFromCenter` (mirrors `footprintRect`), `rectContainsPoint`, `rectContainsRect`, `snap`. No three.js import; return plain tuples.
-4. Write `build-stowage-model.ts`: areas from `vessel.breakbulk_deck` (or the generic 15%/85% + beam−1.5 m rect, `source: "generic"`) and from `vessel.breakbulk_holds` in declared order; `source: "declared"` for both declared cases. Slots from `allSlots(vessel)` with `center = slotToPosition(vessel, slot)`, `deck` from `tier >= 80`, `maxStackWeightT` from the resolving `StackSpec.max_weight_t`, and `areaId` per the rules above. Wrap the build in `WeakMap.get`/`set`. Add `areasAt(model, x_m, z_m, onDeck?)`.
+4. Write `build-stowage-model.ts`: areas from `vessel.breakbulk_deck` (or the generic 15%/85% + beam−1.5 m rect, `source: "generic"`) and from `vessel.breakbulk_holds` in declared order; `source: "declared"` for both declared cases. Slots from `allSlots(vessel)` with `center = slotToPosition(vessel, slot)`, `deck` from `tier >= 80`, `maxStackWeightT` from the resolving `StackSpec.max_weight_t`, and `areaId` per the rules above. Wrap the build in `WeakMap.get`/`set`. Add `areasAt(model, x_m, z_m, onDeck?)`. <!-- Corrected 2026-09-16 (20' reopen): the slot source is now `slotDefs(vessel, areas)` in `slot-enumeration.ts` — `allSlots`' even bays PLUS the odd halves `bayPosition` maps onto each 40' stack bay. Everything else in this step is as written. -->
 5. Write `occupancy.ts`: `occupiedStacks`, `containerOccupancy`, `breakbulkOccupancy`. Read `plan.placements`, not `vessel.stacks` — an empty ship must stay free (the same reasoning `breakbulk-forbidden-zones.ts:28-33` documents).
 6. Write `index.ts` barrel, then rewrite `breakbulk-deck-area.ts` to delegate to the model while keeping every export name and signature. Keep `isUnderDeck` and `areaIdOf` behaviourally identical.
 7. Add `naive-fill-breakbulk.ts`'s `occupiedRects?: Record<string, Rect[]>` option: seed `placedRects` with it per area (keeps keep-outs seeded as today), and iterate `vessel.breakbulk_holds` from the model instead of re-reading them. Keep the `forbiddenXZones` positional parameter and its behaviour.
@@ -115,26 +117,29 @@ coords.ts    ──> the only scene↔x_m offset home (mesh builder, weight item
 9. Point `breakbulk-mesh-builder.ts` and `lib/breakbulk-weight-item.ts` at `coords` + the area's `surfaceY`; delete their local `sceneX` helpers.
 10. Switch `build-demo-plan.ts`'s `withBreakbulkCargo` to `occupiedRectsByArea(vessel, plan.placements)` and drop its `onDeckBayZones`/`underDeckBayZones` imports; leave `holdForbiddenXZones` unset once occupancy covers it (verify no regression on BBC first).
 11. Add the deprecation banner to `breakbulk-forbidden-zones.ts`; grep for remaining callers and leave them working.
-12. Write the three `__tests__` files: coords round-trip (`placementXToSceneX ∘ sceneXToPlacementX` = identity), builder (area count/order/source for BBC vs MV Demo Horizon, the generic-deck rect matches the old `deckArea` output exactly, slot count = `allSlots().length`, `areaId` spot-checks), occupancy (empty plan → no occupancy; one on-deck container blocks only the weather deck; one under-deck container blocks its hold area).
+12. Write the three `__tests__` files: coords round-trip (`placementXToSceneX ∘ sceneXToPlacementX` = identity), builder (area count/order/source for BBC vs MV Demo Horizon, the generic-deck rect matches the old `deckArea` output exactly, slot count = `allSlots().length`, `areaId` spot-checks), occupancy (empty plan → no occupancy; one on-deck container blocks only the weather deck; one under-deck container blocks its hold area). <!-- Corrected 2026-09-16 (20' reopen): the slot count is now `slotDefs`' total (2400 demo / 1341 BBC), not `allSlots().length` (800 / 447); the reopen added the three extra test files listed under Related Code Files. -->
 13. Run `npm run typecheck` and `npm test`; then boot `npm run dev` and visually confirm BBC SAO PAULO and MV Demo Horizon render unchanged with the demo cargo and project cargo toggles.
 
 ## Todo List
 
-- [ ] Read the four context files end to end (deck-area, geometry, domain types, deck-layout-from-spec)
-- [ ] `stowage-model/types.ts` per spec §4.1, reusing domain types
-- [ ] `stowage-model/coords.ts` with `placementXToSceneX`/`sceneXToPlacementX` + rect helpers + `snap`
-- [ ] `stowage-model/build-stowage-model.ts`: areas (declared + generic), slots, `areaId` rules, `WeakMap` cache
-- [ ] `areasAt(model, x_m, z_m, onDeck?)` with multi-match support
-- [ ] `occupancy.ts`: `occupiedStacks`, `containerOccupancy`, `breakbulkOccupancy` (placements, not capacity)
-- [ ] `stowage-model/index.ts` barrel
-- [ ] Rewrite `breakbulk-deck-area.ts` as wrappers; all exports + signatures unchanged
-- [ ] `naive-fill-breakbulk.ts`: add `occupiedRects`, keep `forbiddenXZones`; holds from the model
-- [ ] `breakbulkOverlapsContainer`: per-area stack rects + stack-naming message, same rule id
-- [ ] Move `breakbulk-mesh-builder.ts` + `breakbulk-weight-item.ts` offsets onto `coords`/`surfaceY`
-- [ ] `withBreakbulkCargo` uses `occupiedRectsByArea`
-- [ ] Deprecate `breakbulk-forbidden-zones.ts`, callers still green
-- [ ] Unit tests: coords round-trip, builder (BBC + MV Demo Horizon + generic rect equality), occupancy
-- [ ] `npm run typecheck` clean; `npm test` 396/396; both vessels visually unchanged
+- [x] Read the four context files end to end (deck-area, geometry, domain types, deck-layout-from-spec)
+- [x] `stowage-model/types.ts` per spec §4.1, reusing domain types
+- [x] `stowage-model/coords.ts` with `placementXToSceneX`/`sceneXToPlacementX` + rect helpers + `snap`
+- [x] `stowage-model/build-stowage-model.ts`: areas (declared + generic), slots, `areaId` rules, `WeakMap` cache
+- [x] `areasAt(model, x_m, z_m, onDeck?)` with multi-match support
+- [x] `occupancy.ts`: `occupiedStacks`, `containerOccupancy`, `breakbulkOccupancy` (placements, not capacity)
+- [x] `stowage-model/index.ts` barrel
+- [x] Rewrite `breakbulk-deck-area.ts` as wrappers; all exports + signatures unchanged
+- [x] `naive-fill-breakbulk.ts`: add `occupiedRects`, keep `forbiddenXZones`; holds from the model
+- [x] `breakbulkOverlapsContainer`: per-area stack rects + stack-naming message, same rule id
+- [x] Move `breakbulk-mesh-builder.ts` + `breakbulk-weight-item.ts` offsets onto `coords`/`surfaceY`
+- [x] `withBreakbulkCargo` uses `occupiedRectsByArea`
+- [x] Deprecate `breakbulk-forbidden-zones.ts`, callers still green
+- [x] Unit tests: coords round-trip, builder (BBC + MV Demo Horizon + generic rect equality), occupancy — 36 new tests
+- [x] `npm run typecheck` clean; `npm test` 432/432 (396 existing + 36 new)
+- [x] Deviation from step 13, recorded honestly: the "visually unchanged" criterion was verified by **measuring the data**, not by looking at rendered pixels. A temporary harness printed breakbulk placements before and after the phase (old code restored via `git stash`) and they were **byte-identical in every case**: MV Demo Horizon with `generateDemoCargo(42)` → 470 containers, 2 breakbulk (BB004 @ 31.80,-10.20; BB010 @ 75.05,-10.20); BBC SAO PAULO with its own container set (`buildBbcSaoPauloVesselAndCargo`, the path `bbc-sao-paulo-containers.test.ts` uses) → 8 placed / 6 unplaced, unchanged. So the per-stack loosening changed nothing at demo level and the Validation-Session-1 tie-breaker was not needed. Rendering is unchanged by construction: the mesh builder's offset helper was replaced by an identical function, and `breakbulk-weight-item.test.ts` pins the coordinates/KG.
+- [x] **Correction after code review** (the reviewer measured 8/6 on BBC where this note first said "0"): the original harness loaded `generateDemoCargo(42)` onto BBC — 391 demo containers, an artificial load that leaves no room — instead of BBC's own cargo set, which is not the app's path. The "0 breakbulk" figure was an artefact of the wrong input, not of BBC. Both inputs are byte-identical old-vs-new, so the behaviour-preservation conclusion holds; the input is now named so Phase B's baseline isn't misleading.
+- [x] **Reopen — 20' half-slots (2026-09-16), not on the original list:** `slot-enumeration.ts` enumerates the odd halves `bayPosition` maps onto each 40' stack bay, `lib/geometry.ts` handles odd-bay centres + declared deck bases, `occupancy.ts` sizes footprints by parity, and `canPlaceContainer` now emits `twenty_on_forty` (the latent gap Phase B's review logged). Parity with `validatePlan` proven at **0 mismatches** across every slot on both vessels for 20'/40'/20'-reefer; guarded by `slot-enumeration.test.ts`, `half-slot-geometry.test.ts`, `half-slot-occupancy.test.ts`, `twenty-foot-slot-parity.test.ts`.
 
 ## Success Criteria
 

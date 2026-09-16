@@ -210,8 +210,10 @@ def solve(self, vessel, cargo, ports, voyage):
 frontend/src/
 ├── types/        # Type definitions (domain.ts mirrors backend models)
 ├── api/          # HTTP client
-├── store/        # Zustand stores
-├── lib/          # Utilities (geometry, colors)
+├── store/        # Zustand stores (usePlanStore = view state, usePlanDraftStore = plan)
+├── engine/       # Pure domain logic: stowage model, placement checks, validation rules
+├── lib/          # Utilities (geometry, colors, drop verdicts)
+├── components/   # Shared UI primitives
 ├── features/     # Feature folders (viewer3d, bayplan, panels)
 └── styles.css    # Global styles
 ```
@@ -266,19 +268,27 @@ export type ContainerType = "DRY" | "REEFER" | "OPEN_TOP" | "FLAT_RACK" | "TANK"
 
 ```typescript
 // frontend/src/App.tsx
-import { useQuery } from "@tanstack/react-query";
-import { api } from "@/api/client";
+import { useEffect, useMemo } from "react";
+import { buildDemoPlan } from "@/data/build-demo-plan";
+import { getVesselCatalogEntry } from "@/data/vessel-catalog";
+import { usePlanDraftStore } from "@/store/usePlanDraftStore";
 
 export default function App() {
-  const planQ = useQuery({ 
-    queryKey: ["plan", "demo"], 
-    queryFn: () => api.demoPlan() 
-  });
-  
-  if (!planQ.data) return <div>Loading…</div>;
+  const { vessel, containers } = useMemo(() => getVesselCatalogEntry(vesselId), [vesselId]);
+  const draftPlan = usePlanDraftStore((s) => s.plan);
+  const loadPlan = usePlanDraftStore((s) => s.loadPlan);
+
+  // Demo plan built once per (vessel, toggles), then LOADED into the draft store.
+  useEffect(() => {
+    loadPlan(vessel, buildDemoPlan(vessel, containers, { cargoLoaded, projectCargoLoaded }));
+  }, [vessel, containers, cargoLoaded, projectCargoLoaded, loadPlan]);
+
+  const plan = draftPlan ?? LOADING_PLAN; // one-frame stand-in while a vessel switch loads
   return <div className="layout">{/* content */}</div>;
 }
 ```
+
+**Ownership:** the editable plan lives in `usePlanDraftStore`; every view (scene, sidebar, bay plan, validation) reads the draft. There is no `useMemo`-derived plan and no React Query query for plan data.
 
 **Naming:**
 - Component names: `PascalCase` (matches file name)
@@ -286,27 +296,15 @@ export default function App() {
 - Event handlers: `on{Event}` (e.g., `onPointerMissed`)
 - State setters: `set{Property}` (Zustand patterns)
 
-### Zustand Store
+### Zustand Stores
 
-**Pattern:** Minimal, view-state only; plan data in React Query cache.
+**Pattern:** Two stores with distinct ownership — view state in `usePlanStore`, the editable plan in `usePlanDraftStore`. Plan data is NOT in the React Query cache.
+
+**`usePlanStore` — view state only** (`colorMode`, `paletteMode`, `showHull`, deck toggles, `bayFilter`, `hoveredId`, `selectedId`, playback, plus the gesture state `hoveredSlot`/`draggingContainerId`/`pickedId`). Subscribed narrowly to avoid re-render storms.
 
 ```typescript
 // frontend/src/store/usePlanStore.ts
 import { create } from "zustand";
-
-export type ColorMode = "pod" | "weight" | "type";
-
-interface ViewState {
-  colorMode: ColorMode;
-  showOnDeck: boolean;
-  showUnderDeck: boolean;
-  bayFilter: number | null;
-  hoveredId: string | null;
-  selectedId: string | null;
-  setColorMode: (m: ColorMode) => void;
-  toggleOnDeck: () => void;
-  // ...
-}
 
 export const usePlanStore = create<ViewState>((set) => ({
   colorMode: "pod",
@@ -314,7 +312,22 @@ export const usePlanStore = create<ViewState>((set) => ({
   // ...
   setColorMode: (colorMode) => set({ colorMode }),
   toggleOnDeck: () => set((s) => ({ showOnDeck: !s.showOnDeck })),
+  // A drag start also pauses playback and ends any pick (one item in hand at a time)
+  setDraggingContainer: (id) => set(id === null ? { draggingContainerId: null } : { draggingContainerId: id, pickedId: null, hoveredSlot: null, playbackPlaying: false }),
 }));
+```
+
+**`usePlanDraftStore` — the only place a plan is mutated from the UI.** Invariants that make it safe to select from directly:
+
+- **validate-then-mutate:** every action runs the same predicate the validator uses (`canPlaceContainer`/`canPlaceBreakbulk`) *before* touching state; a rejected action returns its `reasons` and changes nothing (no new plan object, no history entry).
+- **never mutate in place:** each action builds a new `StowagePlan`, which keeps every undo entry valid and lets the engine memoise by plan identity.
+- **derived `unplaced`:** recomputed as `containers − placements` on every mutation, never stored separately.
+- **a move is validated as unplace + place:** the item's own placement is stripped first, so a re-place cannot append a duplicate.
+- **undo/redo:** plain `past`/`future` arrays capped at 100 entries (`HISTORY_CAP`); no history library.
+
+```typescript
+const placeContainer = usePlanDraftStore((s) => s.placeContainer); // returns a PlacementResult
+const undo = usePlanDraftStore((s) => s.undo);
 ```
 
 **Selectors:** Use when accessing to avoid re-renders.
@@ -323,6 +336,21 @@ export const usePlanStore = create<ViewState>((set) => ({
 const colorMode = usePlanStore((s) => s.colorMode);
 const setSelected = usePlanStore((s) => s.setSelected);
 ```
+
+### Placement Checks (engine/placement)
+
+**Pattern:** **One predicate per cargo kind**, shared by the drop UI, the drop preview and the full-plan validation. This is the frontend form of the repo's "validator before optimizer" principle — the UI can never offer a slot the validator would flag.
+
+| Module | Role |
+|---|---|
+| `can-place-container.ts` / `can-place-breakbulk.ts` | The predicates: one candidate (item + slot/pose) → `PlacementResult` |
+| `reason.ts` | Rule-id vocabulary + the `RULE_SEVERITY` table (D1) and `PlacementResult` shape |
+| `placement-reason-builders.ts` | Shared message builders; messages stay byte-identical to the plan-wide rules |
+| `placeholders.ts` | `validSlotsFor` / `blockedSlots` / `blockedReasonFor` / `verdictOf` |
+
+**Rule ids are the same ids** `engine/validation-rules.ts` and `engine/breakbulk-validation-rules.ts` emit, and `breakbulk-validation-rules.ts` now loops over `canPlaceBreakbulk` — so a tooltip and the violations list name the same thing with the same words.
+
+**Performance:** `validSlotsFor` is a per-gesture sweep (≈1.05 ms for 447 slots) — memoise it at the call site. The hover path must use `blockedReasonFor` (one slot, one predicate call), never `blockedSlots`.
 
 ### HTTP Client
 
