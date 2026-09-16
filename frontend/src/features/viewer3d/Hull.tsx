@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { Detailed, Edges } from "@react-three/drei";
+import { Suspense, useEffect, useMemo } from "react";
+import { Detailed, Edges, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import type { Vessel } from "@/types/domain";
 import type { Livery, VesselGeometry } from "@/types/vessel-geometry";
@@ -21,8 +21,9 @@ const COMPONENT_GROUP_COLORS: Record<string, string> = {
 
 /**
  * Renders the real lofted hull + component library (vessel-3d-model-pipeline phases 2-3) when
- * the vessel has a `geometry_id` with generated offsets; otherwise falls back to the old
- * simplified box hull (unchanged) so any vessel without geometry still renders.
+ * the vessel has a `geometry_id` with generated offsets; a pre-baked GLB (dynamic-vessel-switching
+ * plan) when it has `hull.source === "mesh"` instead; otherwise falls back to the old simplified
+ * box hull (unchanged) so any vessel without geometry still renders.
  * TODO(phase-3+): funnel logo decal, water-transparency toggle and draft marks all wait on
  * P1-demo phase-04's `Water`, which doesn't exist yet.
  */
@@ -41,11 +42,57 @@ export function Hull({ vessel }: { vessel: Vessel }) {
       </Detailed>
     );
   }
+  if (geometry?.hull.source === "mesh") {
+    // Suspense fallback covers the GLB streaming in; SimpleBoxHull also still catches the case
+    // where the file is genuinely missing/404 (no error boundary here — see GltfHull comment).
+    return (
+      <Suspense fallback={<SimpleBoxHull vessel={vessel} />}>
+        <GltfHull geometry={geometry} meshUri={geometry.hull.mesh_uri} />
+      </Suspense>
+    );
+  }
   return <SimpleBoxHull vessel={vessel} />;
 }
 
 function resolveLivery(geometry: VesselGeometry, vessel: Vessel): Livery {
   return vessel.livery_override ? { ...geometry.livery, ...vessel.livery_override } : geometry.livery;
+}
+
+/**
+ * Pre-baked GLB hull (dynamic-vessel-switching plan) — for vessels whose exterior is authored
+ * externally (Blender) rather than lofted from offsets, e.g. BBC SAO PAULO. Materials are baked
+ * into the GLB itself, unlike LoftedHull's procedural livery, so nothing here reads
+ * `geometry.livery`.
+ * TODO: Draco/KTX2 decoder self-hosting (per the source Confluence plan's "no external CDN"
+ * preference) is not wired up yet — this environment's tooling currently blocks reading
+ * node_modules to copy the decoder files into public/decoders/. Not needed for today's
+ * uncompressed placeholder GLB; wire `useGLTF(meshUri, "/decoders/draco/")` (drei's string-path
+ * overload) once a real Draco/KTX2-compressed asset replaces it.
+ */
+function GltfHull({ geometry, meshUri }: { geometry: VesselGeometry; meshUri: string }) {
+  const showHull = usePlanStore((s) => s.showHull);
+  const { scene } = useGLTF(meshUri);
+
+  // Hull shouldn't steal clicks from EmptySlotPicker/ContainerInstances — mirrors LoftedHull's
+  // `raycast={() => null}` on its own meshes, but has to be applied per-mesh across the whole
+  // loaded scene graph since `<primitive>` inserts the object as-is.
+  useEffect(() => {
+    scene.traverse((child) => {
+      if (child instanceof THREE.Mesh) child.raycast = () => null;
+    });
+  }, [scene]);
+
+  // Translates the assumed ship-frame authoring convention (x: AP=0->FP=lbp_m, y: keel=0->
+  // deck=depth_m up, z: centered on centerline) into this app's scene convention — the same
+  // [-lbp_m/2, -depth_m, +0] translation lib/ship-frame.ts's shipToScene applies elsewhere. NOT
+  // verified against a Blender asset: the generated GLB (scripts/build-bbc-sao-paulo-glb.mjs) is built
+  // to this same assumed convention so it renders centered/grounded today, but the actual
+  // exported GLB's true axes/origin must be checked once that asset exists (see
+  // bbc-sao-paulo-geometry.ts's module comment).
+  const position: [number, number, number] = [-geometry.particulars.lbp_m / 2, -geometry.particulars.depth_m, 0];
+
+  if (!showHull) return null;
+  return <primitive object={scene} position={position} />;
 }
 
 function LoftedHull({ vessel, geometry }: { vessel: Vessel; geometry: VesselGeometry }) {
@@ -86,7 +133,7 @@ function LoftedHull({ vessel, geometry }: { vessel: Vessel; geometry: VesselGeom
 
 function SimpleBoxHull({ vessel }: { vessel: Vessel }) {
   const showHull = usePlanStore((s) => s.showHull);
-  const depth = holdDepth() + 1.5;
+  const depth = holdDepth(vessel) + 1.5;
   const L = vessel.length_m;
   const B = vessel.beam_m;
 

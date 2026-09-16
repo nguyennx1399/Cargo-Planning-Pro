@@ -7,6 +7,8 @@ import type { StabilityResult } from "@/engine/stability-indicative";
 import { Hull } from "./Hull";
 import { ContainerInstances } from "./ContainerInstances";
 import { BreakbulkCargoInstances } from "./BreakbulkCargoInstances";
+import { EmptySlotPicker } from "./EmptySlotPicker";
+import { GhostContainerPreview } from "./GhostContainerPreview";
 import { WaterlineReference } from "./WaterlineReference";
 import { LoadingSequenceDriver } from "./LoadingSequenceDriver";
 import { ShipAttitudeDriver } from "./ShipAttitudeDriver";
@@ -46,6 +48,8 @@ export function VesselScene({ vessel, plan, attitude }: { vessel: Vessel; plan: 
         <Hull vessel={vessel} />
         <ContainerInstances vessel={vessel} plan={plan} />
         <BreakbulkCargoInstances vessel={vessel} plan={plan} />
+        <EmptySlotPicker vessel={vessel} plan={plan} />
+        <GhostContainerPreview vessel={vessel} plan={plan} />
       </group>
 
       <OrbitControls makeDefault target={[0, 0, 0]} maxPolarAngle={Math.PI * 0.49} />
