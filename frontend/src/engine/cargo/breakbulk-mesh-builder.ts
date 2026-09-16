@@ -8,10 +8,14 @@
 // naiveFillBreakbulk/onDeckBayZones validated them, risking real visual overlap with containers.
 // Kept geometry-free like the rest of the breakbulk subsystem: works for any vessel, no
 // VesselGeometry required — placeholder SHAPES for a demo, not accurate models.
+//
+// Phase A: the x_m -> scene-x offset now comes from engine/stowage-model/coords.ts (the single
+// home for that conversion) and the resting surface from the placement's own stowage area.
 import * as THREE from "three";
 import type { BreakbulkCargo, BreakbulkPlacement, Vessel } from "@/types/domain";
 import type { MeshData } from "@/engine/mesh-data";
 import { cargoBaseHeight } from "@/engine/breakbulk-deck-area";
+import { placementXToSceneX } from "@/engine/stowage-model/coords";
 
 function toMeshData(geometry: THREE.BufferGeometry): MeshData {
   const indexAttr = geometry.getIndex();
@@ -24,10 +28,6 @@ function toMeshData(geometry: THREE.BufferGeometry): MeshData {
   };
 }
 
-function sceneX(vessel: Vessel, xM: number): number {
-  return xM - vessel.length_m / 2;
-}
-
 /** A cylinder LYING ON ITS SIDE, axis along scene x (fore-aft) — for a tower section transported
  * horizontally. three.js's CylinderGeometry always starts axis-along-local-Y, so this rotates it.
  * KNOWN LIMITATION: only correct for rotation_deg=0 (axis along x). naiveFillBreakbulk (phase 02)
@@ -37,7 +37,7 @@ function towerMeshData(item: BreakbulkCargo, placement: BreakbulkPlacement, vess
   const radius = item.height_m / 2; // catalog stores tower diameter in height_m (see phase-01)
   const cylinder = new THREE.CylinderGeometry(radius * 0.85, radius, item.length_m, 16); // slight taper, top narrower
   cylinder.rotateZ(Math.PI / 2); // swing axis from local Y to local X (scene x)
-  cylinder.translate(sceneX(vessel, placement.x_m), deckY + radius, placement.z_m);
+  cylinder.translate(placementXToSceneX(placement.x_m, vessel.length_m), deckY + radius, placement.z_m);
   return toMeshData(cylinder);
 }
 
@@ -58,5 +58,5 @@ export function buildBreakbulkMesh(item: BreakbulkCargo, placement: BreakbulkPla
 
   if (item.category === "wind_turbine_tower") return towerMeshData(item, placement, vessel, deckY);
 
-  return boxSceneMeshData(lengthM, widthM, item.height_m, [sceneX(vessel, placement.x_m), deckY + item.height_m / 2, placement.z_m]);
+  return boxSceneMeshData(lengthM, widthM, item.height_m, [placementXToSceneX(placement.x_m, vessel.length_m), deckY + item.height_m / 2, placement.z_m]);
 }

@@ -103,4 +103,35 @@ describe("naiveFillBreakbulk", () => {
     const zValues = placements.map((p) => p.z_m).sort((a, b) => a - b);
     expect(new Set(zValues).size).toBe(3); // 3 distinct rows
   });
+
+  it("packs around container stacks passed via occupiedRects", () => {
+    // Phase A: containers that actually carry boxes are passed in per area and must block exactly
+    // like a keep-out. deckArea's x range is [30,170]; block the first stretch of it.
+    const items = [cargo("a", { length_m: 10, width_m: 4 })];
+    const blocked = [{ xMin: 30, xMax: 90, zMin: -13.5, zMax: 13.5 }];
+    const { placements, unplaced } = naiveFillBreakbulk(vessel, items, [], {
+      occupiedRects: { weather_deck: blocked },
+    });
+    expect(unplaced).toHaveLength(0);
+    const rect = footprintRect(items[0], placements[0]);
+    expect(rectsOverlap(rect, blocked[0])).toBe(false);
+    expect(rect.xMin).toBeGreaterThanOrEqual(90); // pushed past the stack, not through it
+  });
+
+  it("leaves an item unplaced when occupiedRects fills the area", () => {
+    const items = [cargo("a", { length_m: 10, width_m: 4 })];
+    const { placements, unplaced } = naiveFillBreakbulk(vessel, items, [], {
+      occupiedRects: { weather_deck: [{ xMin: 0, xMax: 200, zMin: -20, zMax: 20 }] },
+    });
+    expect(placements).toHaveLength(0);
+    expect(unplaced).toEqual(["a"]);
+  });
+
+  it("does not apply another area's occupiedRects to the weather deck", () => {
+    const items = [cargo("a", { length_m: 10, width_m: 4 })];
+    const { unplaced } = naiveFillBreakbulk(vessel, items, [], {
+      occupiedRects: { some_hold: [{ xMin: 0, xMax: 200, zMin: -20, zMax: 20 }] },
+    });
+    expect(unplaced).toHaveLength(0); // the deck is free
+  });
 });

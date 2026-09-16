@@ -7,177 +7,127 @@
  * Every rule is per stowage area (weather deck, or a hold via BreakbulkPlacement.area_id): an item
  * on the hatch covers can't overlap one on the tank top below it, and each area has its own
  * rectangle, keep-outs, clear height and rated load.
+ *
+ * PHASE B (spec §4.5): each rule here is now a thin loop over `engine/placement/canPlaceBreakbulk`,
+ * the same predicate the drop preview and the placeholders use, so the UI and this report cannot
+ * disagree. Exported names, argument signatures, rule ids and message strings are UNCHANGED — they
+ * are the regression contract (breakbulk-validation-rules.test.ts, validate-plan.test.ts,
+ * bbc-sao-paulo-containers.test.ts, breakbulk-real-vessels-no-violations.test.ts). The tolerances
+ * (EDGE_TOLERANCE_M), the band arithmetic and the container-stack occupancy live in the predicate.
  */
-import type { BreakbulkCargo, BreakbulkPlacement, Placement, Vessel, Violation } from "@/types/domain";
-import {
-  areaIdOf,
-  areaLabel,
-  deckArea,
-  deckKeepOuts,
-  deckLoadRating,
-  isKnownArea,
-  maxCargoHeight,
-  WEATHER_DECK_AREA_ID,
-} from "./breakbulk-deck-area";
-import { footprintRect, rectsOverlap } from "./breakbulk-overlap-check";
-import { onDeckBayZones, underDeckBayZones } from "./breakbulk-forbidden-zones";
+import type {
+  BreakbulkCargo,
+  BreakbulkPlacement,
+  Placement,
+  StowagePlan,
+  Vessel,
+  Violation,
+} from "@/types/domain";
+import { buildStowageModel, type StowageModel } from "@/engine/stowage-model";
+import { canPlaceBreakbulk, type BreakbulkPose } from "./placement/can-place-breakbulk";
+import type { PlacementRule } from "./placement/reason";
 
-/** DEMO approximation, not real structural deck strength — see plan.md "Ngoài phạm vi". */
-const OVERWEIGHT_BAND_M = 20;
-const OVERWEIGHT_LIMIT_T = 200;
-
-function violation(rule: string, message: string, cargoId: string): Violation {
-  return { rule, severity: "error", message, container_ids: [cargoId], slots: [] };
+/** A plan view for the predicate: these rules never received a StowagePlan, so the wrappers hand it
+ * exactly what they were given. `containers: []` is safe — canPlaceBreakbulk reads only
+ * `plan.breakbulk_*`, `plan.ports` and `plan.placements` (the last only for container stacks). */
+function planView(
+  cargo: BreakbulkCargo[],
+  placements: BreakbulkPlacement[],
+  containerPlacements: Placement[],
+): StowagePlan {
+  return {
+    id: "breakbulk-rules",
+    vessel_id: "",
+    voyage: "",
+    ports: [],
+    containers: [],
+    placements: containerPlacements,
+    unplaced: [],
+    breakbulk_cargo: cargo,
+    breakbulk_placements: placements,
+  };
 }
 
-// Placement stores a rect's CENTER (x_m/z_m), so footprintRect reconstructs edges as
-// center +/- extent/2 — for edge-of-deck placements (center derived from area.xMin/zMin
-// themselves), that round-trip doesn't always reproduce the exact original bound
-// (e.g. (25.8 + 31) - 31 = 25.799999999999997 in IEEE 754). A zero-tolerance comparison here
-// flags those as real violations even though the placement is legitimately at the boundary —
-// found via the real demo breakbulk set, not a contrived case. Same order of tolerance the
-// naive-fill-breakbulk tests already use for this exact reason (see their `- 1e-9` assertions).
-const EDGE_TOLERANCE_M = 1e-6;
+/** `breakbulkOverlap`'s signature is frozen WITHOUT a vessel (it is pure geometry), yet the predicate
+ * takes one. Its plan view carries no container placements, and canPlaceBreakbulk then never reads
+ * the vessel (the container-stack check is skipped outright), so this placeholder is provably unread
+ * — it exists to satisfy the argument list, not to describe a ship. */
+const NO_VESSEL: Vessel = { id: "", name: "", imo: null, length_m: 0, beam_m: 0, bays: [], rows: [], stacks: [] };
 
-/** Placements with their cargo item resolved, grouped by stowage area id. */
-function byArea(cargo: BreakbulkCargo[], placements: BreakbulkPlacement[]) {
-  const items = new Map(cargo.map((c) => [c.id, c]));
-  const groups = new Map<string, { p: BreakbulkPlacement; item: BreakbulkCargo }[]>();
-  for (const p of placements) {
-    const item = items.get(p.cargo_id);
-    if (!item) continue;
-    const key = areaIdOf(p);
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push({ p, item });
-  }
-  return groups;
+function poseOf(placement: BreakbulkPlacement): BreakbulkPose {
+  return {
+    x_m: placement.x_m,
+    z_m: placement.z_m,
+    rotation_deg: placement.rotation_deg,
+    ...(placement.area_id !== undefined ? { areaId: placement.area_id } : {}),
+  };
 }
 
-export function breakbulkOutOfDeckArea(vessel: Vessel, cargo: BreakbulkCargo[], placements: BreakbulkPlacement[]): Violation[] {
+/** One rule = its predicate rule id over every placement, mapped back to the Violation shape.
+ * `container_ids` is the placement that produced the message (the rules' own attribution), and a
+ * message already emitted is skipped — which reproduces the pairwise / 20 m band dedup the rules
+ * used to do inline, and keeps a pair reported once, from the placement that comes first in plan
+ * order. */
+function ruleViolations(vessel: Vessel, model: StowageModel, plan: StowagePlan, rule: PlacementRule): Violation[] {
   const out: Violation[] = [];
-  for (const [areaId, entries] of byArea(cargo, placements)) {
-    if (!isKnownArea(vessel, areaId)) {
-      for (const { p } of entries) out.push(violation("breakbulk_out_of_deck_area", `${p.cargo_id}: unknown stowage area "${areaId}"`, p.cargo_id));
-      continue;
-    }
-    const area = deckArea(vessel, areaId);
-    for (const { p, item } of entries) {
-      const rect = footprintRect(item, p);
-      if (
-        rect.xMin < area.xMin - EDGE_TOLERANCE_M ||
-        rect.xMax > area.xMax + EDGE_TOLERANCE_M ||
-        rect.zMin < area.zMin - EDGE_TOLERANCE_M ||
-        rect.zMax > area.zMax + EDGE_TOLERANCE_M
-      ) {
-        const where = areaId === WEATHER_DECK_AREA_ID ? "the usable deck area" : areaLabel(vessel, areaId);
-        out.push(violation("breakbulk_out_of_deck_area", `${p.cargo_id}: footprint extends outside ${where}`, p.cargo_id));
-      }
+  const seen = new Set<string>();
+  for (const placement of plan.breakbulk_placements) {
+    const item = plan.breakbulk_cargo.find((c) => c.id === placement.cargo_id);
+    if (!item) continue; // orphan placement: no cargo row to check, exactly as before
+    for (const reason of canPlaceBreakbulk(model, plan, item, poseOf(placement), vessel).reasons) {
+      if (reason.rule !== rule || seen.has(reason.message)) continue;
+      seen.add(reason.message);
+      out.push({ rule, severity: "error", message: reason.message, container_ids: [placement.cargo_id], slots: [] });
     }
   }
   return out;
+}
+
+const violationsFor = (
+  vessel: Vessel,
+  cargo: BreakbulkCargo[],
+  placements: BreakbulkPlacement[],
+  containerPlacements: Placement[],
+  rule: PlacementRule,
+): Violation[] =>
+  ruleViolations(vessel, buildStowageModel(vessel), planView(cargo, placements, containerPlacements), rule);
+
+export function breakbulkOutOfDeckArea(vessel: Vessel, cargo: BreakbulkCargo[], placements: BreakbulkPlacement[]): Violation[] {
+  return violationsFor(vessel, cargo, placements, [], "breakbulk_out_of_deck_area");
 }
 
 export function breakbulkOverlap(cargo: BreakbulkCargo[], placements: BreakbulkPlacement[]): Violation[] {
-  const out: Violation[] = [];
-  for (const entries of byArea(cargo, placements).values()) {
-    for (let i = 0; i < entries.length; i++) {
-      const rectA = footprintRect(entries[i].item, entries[i].p);
-      for (let j = i + 1; j < entries.length; j++) {
-        if (rectsOverlap(rectA, footprintRect(entries[j].item, entries[j].p))) {
-          out.push(violation("breakbulk_overlap", `${entries[i].p.cargo_id} overlaps ${entries[j].p.cargo_id}`, entries[i].p.cargo_id));
-        }
-      }
-    }
-  }
-  return out;
+  return violationsFor(NO_VESSEL, cargo, placements, [], "breakbulk_overlap");
 }
 
-/** Breakbulk cargo on the weather deck must clear on-deck container bays; cargo in a hold must clear
- * under-deck container bays. */
+/** Breakbulk cargo must clear the container stacks that actually carry boxes in its own area.
+ *
+ * Phase A change (Validation Session 1 tie-breaker): this used to block a whole bay across the
+ * full beam via onDeckBayZones/underDeckBayZones. It now tests the footprint against the real
+ * per-stack rects of the area the item sits in (engine/stowage-model/occupancy.ts), so cargo can
+ * legitimately fit beside a stack. If this ever lets a placement through that the BBC demo flags,
+ * the agreed fallback is to revert this one rule to whole-bay blocking and record it for Phase D —
+ * do not chase it inside a behaviour-preserving phase. */
 export function breakbulkOverlapsContainer(vessel: Vessel, cargo: BreakbulkCargo[], placements: BreakbulkPlacement[], containerPlacements: Placement[]): Violation[] {
-  const deckZones = onDeckBayZones(vessel, containerPlacements);
-  const holdZones = underDeckBayZones(vessel, containerPlacements);
-  const out: Violation[] = [];
-  for (const [areaId, entries] of byArea(cargo, placements)) {
-    const onDeck = areaId === WEATHER_DECK_AREA_ID;
-    const zones = onDeck ? deckZones : holdZones;
-    for (const { p, item } of entries) {
-      const rect = footprintRect(item, p);
-      if (zones.some((z) => rect.xMin < z.xMax && rect.xMax > z.xMin)) {
-        out.push(violation("breakbulk_overlaps_container", `${p.cargo_id}: footprint overlaps ${onDeck ? "an on-deck" : "an under-deck"} container bay`, p.cargo_id));
-      }
-    }
-  }
-  return out;
+  return violationsFor(vessel, cargo, placements, containerPlacements, "breakbulk_overlaps_container");
 }
 
 export function breakbulkOverweight(vessel: Vessel, cargo: BreakbulkCargo[], placements: BreakbulkPlacement[]): Violation[] {
-  const out: Violation[] = [];
-  for (const [areaId, entries] of byArea(cargo, placements)) {
-    if (!isKnownArea(vessel, areaId)) continue;
-    const area = deckArea(vessel, areaId);
-    const rating = deckLoadRating(vessel, areaId);
-    // Area with a rated surface: rating × the band's usable area (still a uniform-load
-    // simplification — no point-load/lashing check). Otherwise the generic DEMO limit.
-    const limitT = rating ? Math.round(rating * OVERWEIGHT_BAND_M * (area.zMax - area.zMin)) : OVERWEIGHT_LIMIT_T;
-    const onDeck = areaId === WEATHER_DECK_AREA_ID;
-    for (let bandStart = area.xMin; bandStart < area.xMax; bandStart += OVERWEIGHT_BAND_M) {
-      const bandEnd = bandStart + OVERWEIGHT_BAND_M;
-      const inBand = entries.filter(({ p }) => p.x_m >= bandStart && p.x_m < bandEnd);
-      const weight = inBand.reduce((sum, e) => sum + e.item.weight_t, 0);
-      if (weight > limitT) {
-        const what = rating ? `${limitT}t ${onDeck ? "hatch-cover" : "rated"} limit (${rating} t/m²)` : `${limitT}t demo limit`;
-        const where = onDeck ? "Deck band" : `${areaLabel(vessel, areaId)} band`;
-        out.push(violation("breakbulk_overweight", `${where} ${bandStart.toFixed(0)}-${bandEnd.toFixed(0)}m: ${weight.toFixed(0)}t exceeds the ${what}`, inBand[0].p.cargo_id));
-      }
-    }
-  }
-  return out;
+  return violationsFor(vessel, cargo, placements, [], "breakbulk_overweight");
 }
 
 /** Footprint overlaps one of the area's declared keep-out structures (crane pedestal etc.). */
 export function breakbulkInKeepOut(vessel: Vessel, cargo: BreakbulkCargo[], placements: BreakbulkPlacement[]): Violation[] {
-  const out: Violation[] = [];
-  for (const [areaId, entries] of byArea(cargo, placements)) {
-    const keepOuts = deckKeepOuts(vessel, areaId);
-    if (keepOuts.length === 0) continue;
-    for (const { p, item } of entries) {
-      const rect = footprintRect(item, p);
-      const hit = keepOuts.find((k) => rectsOverlap(rect, k));
-      if (hit) out.push(violation("breakbulk_in_keep_out", `${p.cargo_id}: footprint overlaps ${hit.label}`, p.cargo_id));
-    }
-  }
-  return out;
+  return violationsFor(vessel, cargo, placements, [], "breakbulk_in_keep_out");
 }
 
 /** Item is taller than the area's declared clear height (deck above, hatch covers, stowed jibs…). */
 export function breakbulkTooTall(vessel: Vessel, cargo: BreakbulkCargo[], placements: BreakbulkPlacement[]): Violation[] {
-  const out: Violation[] = [];
-  for (const [areaId, entries] of byArea(cargo, placements)) {
-    const limit = maxCargoHeight(vessel, areaId);
-    if (!Number.isFinite(limit)) continue;
-    for (const { p, item } of entries) {
-      if (item.height_m > limit + EDGE_TOLERANCE_M) {
-        out.push(violation("breakbulk_too_tall", `${p.cargo_id}: ${item.height_m}m tall exceeds the ${limit}m clear height in ${areaLabel(vessel, areaId)}`, p.cargo_id));
-      }
-    }
-  }
-  return out;
+  return violationsFor(vessel, cargo, placements, [], "breakbulk_too_tall");
 }
 
 /** The item's own footprint pressure (weight ÷ footprint area) exceeds the surface's rated load —
  * catches a single heavy, compact piece that a 20 m band average would hide. */
 export function breakbulkOverPressure(vessel: Vessel, cargo: BreakbulkCargo[], placements: BreakbulkPlacement[]): Violation[] {
-  const out: Violation[] = [];
-  for (const [areaId, entries] of byArea(cargo, placements)) {
-    const rating = deckLoadRating(vessel, areaId);
-    if (rating === undefined) continue;
-    for (const { p, item } of entries) {
-      const pressure = item.weight_t / (item.length_m * item.width_m);
-      if (pressure > rating + 1e-9) {
-        out.push(violation("breakbulk_over_pressure", `${p.cargo_id}: ${pressure.toFixed(2)} t/m² exceeds the ${rating} t/m² rating of ${areaLabel(vessel, areaId)}`, p.cargo_id));
-      }
-    }
-  }
-  return out;
+  return violationsFor(vessel, cargo, placements, [], "breakbulk_over_pressure");
 }

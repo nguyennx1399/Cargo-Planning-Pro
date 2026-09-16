@@ -1,3 +1,13 @@
+/**
+ * @deprecated Phase A moved this geometry into engine/stowage-model: `occupancy.ts` owns per-area
+ * container stack footprints and `coords.ts` owns the x_m offset. Nothing in the app calls
+ * onDeckBayZones/underDeckBayZones any more — build-demo-plan.ts packs around occupiedRectsByArea
+ * and breakbulk-validation-rules.ts checks real stack rects.
+ *
+ * Kept only because `__tests__/breakbulk-forbidden-zones.test.ts` still imports onDeckBayZones and
+ * naive-fill-breakbulk still imports the `XZone` type. Validation Session 1 decided this file and
+ * the breakbulk-deck-area shim are deleted in Phase E, once callers migrate. Do not add new callers.
+ */
 import type { Placement, Vessel } from "@/types/domain";
 import { DIM, LAYOUT } from "@/lib/geometry";
 

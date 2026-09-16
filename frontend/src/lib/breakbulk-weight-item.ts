@@ -10,9 +10,10 @@ import type { BreakbulkCargo, BreakbulkPlacement, Vessel } from "@/types/domain"
 import type { VesselGeometry } from "@/types/vessel-geometry";
 import type { WeightItem } from "@/engine/stability-indicative";
 import { cargoBaseHeight } from "@/engine/breakbulk-deck-area";
+import { placementXToSceneX } from "@/engine/stowage-model/coords";
 
 export function breakbulkWeightItem(vessel: Vessel, geometry: VesselGeometry, item: BreakbulkCargo, placement: BreakbulkPlacement): WeightItem {
-  const sceneX = placement.x_m - vessel.length_m / 2;
+  const sceneX = placementXToSceneX(placement.x_m, vessel.length_m);
   return {
     weight_t: item.weight_t,
     lcg_m: sceneX + geometry.particulars.lbp_m / 2, // scene -> true ship-frame, same inversion cargoWeightItem uses

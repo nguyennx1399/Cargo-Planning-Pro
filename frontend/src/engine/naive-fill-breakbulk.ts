@@ -12,6 +12,7 @@
 import type { BreakbulkCargo, BreakbulkPlacement, Vessel } from "@/types/domain";
 import { deckArea, deckKeepOuts, deckLoadRating, maxCargoHeight, WEATHER_DECK_AREA_ID, type DeckArea } from "./breakbulk-deck-area";
 import { footprintRect, rectsOverlap, type Rect } from "./breakbulk-overlap-check";
+import { buildStowageModel } from "./stowage-model/build-stowage-model";
 import type { XZone } from "./breakbulk-forbidden-zones";
 
 export interface BreakbulkFillResult {
@@ -56,6 +57,12 @@ export interface BreakbulkFillOptions {
   useHolds?: boolean;
   /** x ranges in the holds already taken (e.g. by under-deck container bays). */
   holdForbiddenXZones?: XZone[];
+  /** Containers already standing, keyed by stowage area — one rect per bay/row/deck that actually
+   * carries a box (engine/stowage-model/occupancy.ts's `occupiedRectsByArea`). Seeded into the
+   * area's placed rects so cargo packs around real stacks instead of whole bays across the full
+   * beam. NOTE: this must stay an options field — the positional `forbiddenXZones` parameter is
+   * frozen because breakbulk-real-vessels-no-violations.test.ts calls it positionally. */
+  occupiedRects?: Record<string, Rect[]>;
 }
 
 /** Why an item can't go into an area at all, regardless of what's already placed there. */
@@ -72,11 +79,16 @@ function packIntoArea(
   vessel: Vessel,
   items: BreakbulkCargo[],
   areaId: string,
-  forbiddenXZones: XZone[]
+  forbiddenXZones: XZone[],
+  occupiedRects: Record<string, Rect[]>
 ): { placements: BreakbulkPlacement[]; leftover: BreakbulkCargo[] } {
   const area = deckArea(vessel, areaId);
   const placements: BreakbulkPlacement[] = [];
-  const placedRects: Rect[] = deckKeepOuts(vessel, areaId).map(({ xMin, xMax, zMin, zMax }) => ({ xMin, xMax, zMin, zMax }));
+  const placedRects: Rect[] = [
+    ...deckKeepOuts(vessel, areaId).map(({ xMin, xMax, zMin, zMax }) => ({ xMin, xMax, zMin, zMax })),
+    // Container stacks that actually carry boxes block a row exactly like a keep-out does.
+    ...(occupiedRects[areaId] ?? []),
+  ];
   const leftover: BreakbulkCargo[] = [];
   // Shelf rows, each opened at the z where the previous deepest row ended. Every item tries EVERY
   // existing row first (first-fit), so the free x-length an earlier row left behind — e.g. the
@@ -147,14 +159,18 @@ export function naiveFillBreakbulk(
   forbiddenXZones: XZone[],
   options: BreakbulkFillOptions = {}
 ): BreakbulkFillResult {
+  const occupiedRects = options.occupiedRects ?? {};
   const sorted = [...cargo].sort((a, b) => b.length_m * b.width_m - a.length_m * a.width_m);
-  const deck = packIntoArea(vessel, sorted, WEATHER_DECK_AREA_ID, forbiddenXZones);
+  const deck = packIntoArea(vessel, sorted, WEATHER_DECK_AREA_ID, forbiddenXZones, occupiedRects);
   const placements = [...deck.placements];
   let remaining = deck.leftover;
   if (options.useHolds ?? true) {
-    for (const hold of vessel.breakbulk_holds ?? []) {
+    // Hold areas come from the model (declared order, largest first) rather than being re-read
+    // from vessel.breakbulk_holds — one geometry source.
+    for (const area of buildStowageModel(vessel).areas) {
+      if (area.onDeck) continue;
       if (remaining.length === 0) break;
-      const packed = packIntoArea(vessel, remaining, hold.id, options.holdForbiddenXZones ?? []);
+      const packed = packIntoArea(vessel, remaining, area.id, options.holdForbiddenXZones ?? [], occupiedRects);
       placements.push(...packed.placements);
       remaining = packed.leftover;
     }

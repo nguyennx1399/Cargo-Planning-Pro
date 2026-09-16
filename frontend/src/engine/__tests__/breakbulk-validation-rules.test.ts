@@ -80,6 +80,30 @@ describe("breakbulkOverlapsContainer", () => {
     const placements: BreakbulkPlacement[] = [{ cargo_id: "a", x_m: 100, z_m: 0, rotation_deg: 0 }];
     expect(breakbulkOverlapsContainer(vessel, cargo, placements, [])).toHaveLength(0);
   });
+
+  // Phase A replaced whole-bay x-zones with real per-stack rects. These two pin the BOUND of that
+  // loosening: cargo beside a stack is now allowed, cargo crossing one still is not.
+  // Note the fixture above declares `rows: []`, which makes every stack fall back to a full-beam
+  // rect — so these use a vessel with declared rows for a 2.438 m-wide stack footprint.
+  const rowVessel: Vessel = { ...vessel, rows: [1, 3] };
+  const bayTwoStack: Placement[] = [{ container_id: "c1", slot: { bay: 2, row: 1, tier: 82 } }];
+  // bay 2 sits at x_m ≈ 171.3 on this 200 m vessel; row 1's footprint is z ∈ [-2.468, -0.03].
+
+  it("stays clean for cargo in a different row — beside the stack, not over it", () => {
+    const cargo = [item("a", { length_m: 20, width_m: 6 })];
+    // Same x-band as bay 2 (the old x-only zone would have flagged this) but z well clear of row 1.
+    const placements: BreakbulkPlacement[] = [{ cargo_id: "a", x_m: 171.3, z_m: 8, rotation_deg: 0 }];
+    expect(breakbulkOverlapsContainer(rowVessel, cargo, placements, bayTwoStack)).toHaveLength(0);
+  });
+
+  it("still flags cargo whose footprint crosses the stack, and names it", () => {
+    const cargo = [item("a", { length_m: 20, width_m: 6 })];
+    const placements: BreakbulkPlacement[] = [{ cargo_id: "a", x_m: 171.3, z_m: 0, rotation_deg: 0 }];
+    const violations = breakbulkOverlapsContainer(rowVessel, cargo, placements, bayTwoStack);
+    expect(violations).toHaveLength(1);
+    expect(violations[0].rule).toBe("breakbulk_overlaps_container");
+    expect(violations[0].message).toContain("bay 2 row 01"); // names the stack it hit
+  });
 });
 
 describe("breakbulkOverweight", () => {

@@ -67,4 +67,11 @@ export const HIGHLIGHT = {
   hover: "#FFFFFF",
   selected: "#FFD23F",
   ghost: "#42A5F5",
+  /** Drop-target tints, one per `verdictOf` outcome (Phase C, decision D1) — NEVER derived from a
+   * UI-local rule: green = accepted clean, amber = accepted but recorded (an overridable limit like
+   * `overstow`, which the plan-wide report still lists), red = refused. Hexes match the app tokens
+   * `--ok` / `--signal` / `--error` in styles.css so the canvas and the panels agree. */
+  valid: "#2E7D5B",
+  warning: "#E0A030",
+  invalid: "#B83A2E",
 };

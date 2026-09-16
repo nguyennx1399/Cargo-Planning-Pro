@@ -6,7 +6,7 @@ import { generateDemoCargo, DEMO_PORTS } from "./demo-cargo-generator";
 import { generateDemoBreakbulkCargo } from "./demo-breakbulk-generator";
 import { naiveFillPlan } from "@/engine/naive-fill-plan";
 import { naiveFillBreakbulk } from "@/engine/naive-fill-breakbulk";
-import { onDeckBayZones, underDeckBayZones } from "@/engine/breakbulk-forbidden-zones";
+import { occupiedRectsByArea } from "@/engine/stowage-model/occupancy";
 import type { Container, StowagePlan, Vessel } from "@/types/domain";
 
 export function buildDemoVesselAndCargo(): { vessel: Vessel; containers: Container[] } {
@@ -38,15 +38,40 @@ export function buildLoadedDemoPlan(vessel: Vessel, containers: Container[]): St
   return { ...basePlanFields(vessel, containers), placements, unplaced };
 }
 
+export interface DemoPlanOptions {
+  /** Load the container cargo (false = every container left unplaced). */
+  cargoLoaded: boolean;
+  /** Add the demo project-cargo set on top of that container plan. */
+  projectCargoLoaded: boolean;
+}
+
+/** The demo plan for one (vessel, toggles) combination. Single entry point for the UI, which loads
+ * it into the draft store instead of deriving it with a `useMemo` of its own. */
+export function buildDemoPlan(
+  vessel: Vessel,
+  containers: Container[],
+  options: DemoPlanOptions,
+): StowagePlan {
+  const base = options.cargoLoaded
+    ? buildLoadedDemoPlan(vessel, containers)
+    : buildEmptyDemoPlan(vessel, containers);
+  return options.projectCargoLoaded ? withBreakbulkCargo(vessel, base) : base;
+}
+
 /** Adds the fixed demo breakbulk set (wind turbine components + yachts) on top of an existing
- * plan, placed via naiveFillBreakbulk around whatever on-deck containers that plan already has —
- * an empty-ship plan leaves the whole deck free, a fully-loaded one leaves much less room, and
- * some items may end up unplaced in that case (see phase-02 plan's Success Criteria). */
+ * plan, placed via naiveFillBreakbulk around whatever containers that plan already has — an
+ * empty-ship plan leaves the whole deck free, a fully-loaded one leaves much less room, and some
+ * items may end up unplaced in that case (see phase-02 plan's Success Criteria).
+ *
+ * Phase A: the on-deck/under-deck container blockers are now real per-stack footprints keyed by
+ * stowage area (occupiedRectsByArea) instead of whole-bay x-zones across the full beam, so cargo
+ * can fit beside a stack. `holdForbiddenXZones` is gone with it — under-deck stacks now block the
+ * specific hold areas they overlap. The positional `forbiddenXZones` parameter stays (it is frozen
+ * for the no-violations test) and is passed empty. */
 export function withBreakbulkCargo(vessel: Vessel, plan: StowagePlan): StowagePlan {
   const breakbulk_cargo = generateDemoBreakbulkCargo();
-  const forbiddenZones = onDeckBayZones(vessel, plan.placements);
-  const { placements: breakbulk_placements } = naiveFillBreakbulk(vessel, breakbulk_cargo, forbiddenZones, {
-    holdForbiddenXZones: underDeckBayZones(vessel, plan.placements),
+  const { placements: breakbulk_placements } = naiveFillBreakbulk(vessel, breakbulk_cargo, [], {
+    occupiedRects: occupiedRectsByArea(vessel, plan.placements),
   });
   return { ...plan, breakbulk_cargo, breakbulk_placements };
 }
