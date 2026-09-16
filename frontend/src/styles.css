@@ -172,10 +172,17 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 
 .unplaced-list { display: flex; flex-wrap: wrap; gap: 4px; max-height: 140px; overflow-y: auto; }
 .unplaced-item {
-  font-size: 11px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 3px;
-  background: #fff; cursor: grab; user-select: none;
+  font-family: inherit; font-size: 11px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 3px;
+  background: #fff; color: inherit; cursor: grab; user-select: none;
 }
 .unplaced-item-dragging { cursor: grabbing; border-color: var(--signal); background: var(--panel); }
+/* Picked for the WCAG 2.5.7 click-pick → click-target path: nothing is held down, so this must read
+   as "armed", not as "being dragged". */
+.unplaced-item-picked { cursor: pointer; border-color: var(--ok); background: var(--panel); box-shadow: inset 0 0 0 1px var(--ok); }
+/* Drop feedback. Same tokens the canvas tints from (`HIGHLIGHT.warning`/`invalid`): amber = accepted
+   and recorded (the checks list will name it), red = refused. */
+.warn { color: var(--signal); }
+.error { color: var(--error); }
 
 .bayplan-placeholder { display: grid; gap: 4px; }
 
@@ -193,6 +200,10 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .bayplan-cell-blank { aspect-ratio: 1; }
 .bayplan-cell-filled { border-color: transparent; }
 .bayplan-cell-filled:hover { outline: 2px solid var(--ink); outline-offset: -2px; }
+/* A slot the container in hand may go in (Phase C). Outlined rather than filled: a filled cell
+   already means "a container is here", and the POD palette contains greens of its own. */
+.bayplan-cell-valid { border-color: var(--ok); box-shadow: inset 0 0 0 1px var(--ok); cursor: copy; }
+.bayplan-cell-valid:hover { background: var(--panel); }
 .bayplan-row-labels { display: grid; gap: 1.5px; font-size: 8px; text-align: center; justify-content: start; }
 
 .bayplan-weightdist { display: grid; gap: 1px; margin-top: 3px; padding-top: 3px; border-top: 1px solid var(--line); }

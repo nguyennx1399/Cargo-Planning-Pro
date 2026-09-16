@@ -1,9 +1,12 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import type { Container, DeckLevel, StackSpec, StowagePlan, Vessel } from "@/types/domain";
-import { usePlanStore, type ColorMode } from "@/store/usePlanStore";
-import { containerColor, podColorMap, HIGHLIGHT } from "@/lib/colors";
+import type { Container, Slot, StowagePlan, Vessel } from "@/types/domain";
+import { activeContainerId, usePlanStore } from "@/store/usePlanStore";
+import { commitPlacement } from "@/store/commit-placement";
+import { validSlotsFor } from "@/engine/placement/placeholders";
+import { podColorMap } from "@/lib/colors";
 import { visiblePlacements } from "@/engine/playback-slice";
+import { DeckBlock } from "./BayPlanDeckBlock";
 
 // Fixed column width (px) shared by the cell grid, row labels, and weight bars, so all three
 // stay visually aligned. Using a fixed size instead of 1fr keeps the whole bay plan compact for
@@ -14,7 +17,11 @@ const CELL_PX = 14;
  * 2D bay plan (cross-section of one bay, rows across, tiers up) — the planner's main working
  * view. Reuses the same colorMode/paletteMode/selection state as the 3D viewer (usePlanStore) so
  * clicking/hovering a cell here highlights the matching container in 3D and vice versa.
- * TODO(phase-2): drag & drop to move/swap containers -> POST /api/validate.
+ *
+ * A cell click is also the 2D DROP TRIGGER (Phase C): with a container dragged or picked, it runs
+ * the same `commitPlacement` resolver the 3D release and the 3D placeholder click run, through the
+ * same `canPlaceContainer` gate, so this path can never commit something the others would refuse.
+ * Valid targets are outlined from `validSlotsFor`, and a rejection surfaces its own reason line.
  */
 export function BayPlanView({ vessel, plan }: { vessel: Vessel; plan: StowagePlan }) {
   const s = usePlanStore(
@@ -29,6 +36,8 @@ export function BayPlanView({ vessel, plan }: { vessel: Vessel; plan: StowagePla
       setSelected: state.setSelected,
     }))
   );
+  const activeId = usePlanStore(activeContainerId);
+  const [notice, setNotice] = useState<{ text: string; kind: "ok" | "error" } | null>(null);
 
   const pods = useMemo(() => podColorMap(plan.ports, s.paletteMode), [plan.ports, s.paletteMode]);
 
@@ -54,6 +63,39 @@ export function BayPlanView({ vessel, plan }: { vessel: Vessel; plan: StowagePla
     [vessel.stacks, vessel.rows, s.bay]
   );
 
+  // The container in hand (dragged or picked) and the positions it may take, from the engine's own
+  // set — the SAME call the placeholder layer and the Sidebar hint make.
+  const activeContainer = activeId ? plan.containers.find((c) => c.id === activeId) : undefined;
+  const validKeys = useMemo(
+    () => (activeContainer ? new Set(validSlotsFor(vessel, plan, activeContainer).map((slot) => slot.key)) : null),
+    [vessel, plan, activeContainer]
+  );
+  // A stale rejection notice would outlive the gesture it belongs to.
+  useEffect(() => setNotice(null), [s.bay, activeId]);
+
+  /** The 2D half of the ONE commit resolver. With nothing in hand this is still "select what I
+   * clicked"; with a container in hand it is a drop attempt (a cell click is a single pointer
+   * action, which is what makes the 2D view a WCAG 2.5.7 alternative to dragging). */
+  const onCellClick = (slot: Slot, container: Container | undefined) => {
+    if (!activeId) {
+      s.setSelected(container ? container.id : null);
+      return;
+    }
+    const result = commitPlacement(slot);
+    if (!result) return; // nothing to commit: not a drop, and not a selection either
+    if (!result.ok) {
+      const reason = result.reasons[0];
+      setNotice({ text: reason ? `Not placed — ${reason.message}` : "Not placed.", kind: "error" });
+      return;
+    }
+    const recorded = result.reasons[0];
+    setNotice(
+      recorded
+        ? { text: `Placed. Recorded, not blocked: ${recorded.message}`, kind: "ok" }
+        : null,
+    );
+  };
+
   if (s.bay === null) {
     return (
       <div className="bayplan-placeholder">
@@ -72,14 +114,22 @@ export function BayPlanView({ vessel, plan }: { vessel: Vessel; plan: StowagePla
         <strong>Bay {String(s.bay).padStart(2, "0")}</strong>
         <span className="muted small">{containersHere.length} containers · {totalWeight.toFixed(1)} t</span>
       </div>
+      {activeContainer && (
+        <p className="muted small">
+          Placing {activeContainer.id} — outlined cells are valid positions. Click one to place it, Esc to cancel.
+        </p>
+      )}
+      {notice && <p className={`small ${notice.kind === "ok" ? "ok" : "error"}`}>{notice.text}</p>}
       <DeckBlock
         deck="on" bay={s.bay} columns={bayRows} vessel={vessel} containerAt={containerAt} colorMode={s.colorMode} pods={pods}
-        hoveredId={s.hoveredId} selectedId={s.selectedId} setHovered={s.setHovered} setSelected={s.setSelected}
+        hoveredId={s.hoveredId} selectedId={s.selectedId} setHovered={s.setHovered}
+        validKeys={validKeys} onCellClick={onCellClick}
       />
       <div className="bayplan-hatchline" />
       <DeckBlock
         deck="under" bay={s.bay} columns={bayRows} vessel={vessel} containerAt={containerAt} colorMode={s.colorMode} pods={pods}
-        hoveredId={s.hoveredId} selectedId={s.selectedId} setHovered={s.setHovered} setSelected={s.setSelected}
+        hoveredId={s.hoveredId} selectedId={s.selectedId} setHovered={s.setHovered}
+        validKeys={validKeys} onCellClick={onCellClick}
       />
       <WeightDistribution rows={bayRows} weightByRow={weightByRow} />
     </div>
@@ -107,79 +157,6 @@ function WeightDistribution({ rows, weightByRow }: { rows: number[]; weightByRow
       </div>
       <div className="bayplan-row-labels" style={{ gridTemplateColumns: `repeat(${rows.length}, ${CELL_PX}px)` }}>
         {rows.map((r) => <span key={r} className="muted">{r}</span>)}
-      </div>
-    </div>
-  );
-}
-
-interface DeckBlockProps {
-  deck: DeckLevel;
-  bay: number;
-  columns: number[];
-  vessel: Vessel;
-  containerAt: Map<string, Container>;
-  colorMode: ColorMode;
-  pods: Record<string, string>;
-  hoveredId: string | null;
-  selectedId: string | null;
-  setHovered: (id: string | null) => void;
-  setSelected: (id: string | null) => void;
-}
-
-/** One deck level's grid (rows across, tiers up). Both deck levels share the same `columns`
- * (not just the rows that happen to have a stack on THIS deck) so a given row's column lines up
- * vertically between the on-deck and under-deck blocks — row 8 sits directly above row 8 even
- * though under-deck commonly has fewer physical rows than on-deck (see demo-container-vessel.ts:
- * 10 on-deck rows vs 8 under-deck). Rows absent on this deck render as blank columns instead of
- * being dropped, which would otherwise stretch the remaining columns and break that alignment. */
-function DeckBlock({ deck, bay, columns, vessel, containerAt, colorMode, pods, hoveredId, selectedId, setHovered, setSelected }: DeckBlockProps) {
-  const byRow = useMemo(() => {
-    const inBay = vessel.stacks.filter((st) => st.bay === bay && st.deck === deck);
-    return new Map<number, StackSpec>(inBay.map((st) => [st.row, st]));
-  }, [vessel.stacks, bay, deck]);
-
-  if (byRow.size === 0) return null;
-
-  const maxTierCount = Math.max(1, ...[...byRow.values()].map((st) => st.tiers.length));
-
-  return (
-    <div className={`bayplan-deck bayplan-deck-${deck}`}>
-      <div className="bayplan-deck-label muted small">{deck === "on" ? "On deck" : "Under deck"}</div>
-      <div className="bayplan-cells" style={{ gridTemplateColumns: `repeat(${columns.length}, ${CELL_PX}px)` }}>
-        {Array.from({ length: maxTierCount }, (_, tierRow) =>
-          columns.map((row) => {
-            const st = byRow.get(row);
-            if (!st) return <div key={`${row}-void-${tierRow}`} className="bayplan-cell-blank" />;
-            // Descending tier = visually top-to-bottom: for both deck levels, the tier value
-            // nearest the hatch line is the lowest on-deck tier / highest under-deck tier
-            // (see tierCenterY in geometry.ts).
-            const tiers = [...st.tiers].sort((a, b) => b - a);
-            const tier = tiers[tierRow];
-            if (tier === undefined) return <div key={`${row}-empty-${tierRow}`} className="bayplan-cell-blank" />;
-            const container = containerAt.get(`${row}:${tier}`);
-            const isHovered = container && container.id === hoveredId;
-            const isSelected = container && container.id === selectedId;
-            const fill = container
-              ? isSelected ? HIGHLIGHT.selected : isHovered ? HIGHLIGHT.hover : containerColor(container, colorMode, pods)
-              : undefined;
-            return (
-              <div
-                key={`${row}-${tier}`}
-                className={container ? "bayplan-cell bayplan-cell-filled" : "bayplan-cell"}
-                style={fill ? { background: fill } : undefined}
-                title={container ? `Row ${row}, tier ${tier} — ${container.id}` : `Row ${row}, tier ${tier} — empty`}
-                onMouseEnter={() => container && setHovered(container.id)}
-                onMouseLeave={() => container && setHovered(null)}
-                onClick={() => setSelected(container ? container.id : null)}
-              />
-            );
-          })
-        )}
-      </div>
-      <div className="bayplan-row-labels" style={{ gridTemplateColumns: `repeat(${columns.length}, ${CELL_PX}px)` }}>
-        {columns.map((row) => (
-          <span key={row} className="muted">{byRow.has(row) ? row : ""}</span>
-        ))}
       </div>
     </div>
   );
