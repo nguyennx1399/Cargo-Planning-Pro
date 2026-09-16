@@ -3,6 +3,10 @@ frontend/dist/
 frontend/.env
 frontend/.yarn
 
+# Local scratch — kept on disk, not for version control
+frontend/_to_delete_tmp/
+frontend/Claude outputs/
+
 backend/.venv/
 backend/__pycache__/
 backend/*.pyc
