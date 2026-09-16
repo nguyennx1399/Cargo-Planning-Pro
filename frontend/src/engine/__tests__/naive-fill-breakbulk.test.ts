@@ -63,6 +63,31 @@ describe("naiveFillBreakbulk", () => {
     expect(bigPlacement.x_m - big.length_m / 2).toBeCloseTo(area.xMin, 6); // big claimed the first spot
   });
 
+  it("never places an item past the deck's z-bound when reusing a row a previous item left behind", () => {
+    // Regression: naiveFillBreakbulk only checked whether an item's width fit the current row
+    // when EXPLICITLY starting a new row (the x===null branch) — an item that failed to start a
+    // fresh row (too tall) left `rowZ` sitting past that unchecked point, and the NEXT item could
+    // then get placed there via the "first try succeeds" path with no bound check at all. Found
+    // with the real demo breakbulk cargo set: a yacht landed ~4.6m outside the deck's beam.
+    const area = deckArea(vessel);
+    const fullLength = area.xMax - area.xMin - 1;
+    const items = [
+      // Two full-row items force two separate rows (each nearly spans the deck's x-length).
+      cargo("row1", { length_m: fullLength, width_m: 5 }),
+      cargo("row2", { length_m: fullLength, width_m: 20 }),
+      // Small enough to slot in after row2 in x, but wide enough to overflow z if placed there
+      // without a height check.
+      cargo("overflow_candidate", { length_m: 1, width_m: 25 }),
+    ];
+    const { placements } = naiveFillBreakbulk(vessel, items, []);
+    for (const p of placements) {
+      const item = items.find((i) => i.id === p.cargo_id)!;
+      const rect = footprintRect(item, p);
+      expect(rect.zMin).toBeGreaterThanOrEqual(area.zMin - 1e-9);
+      expect(rect.zMax).toBeLessThanOrEqual(area.zMax + 1e-9);
+    }
+  });
+
   it("wraps to a new row when a row runs out of width, and rows don't overlap", () => {
     // Each item is nearly the full usable x-length, so only one fits per row; with 27m usable
     // beam and 8m-wide items, expect multiple rows.

@@ -144,9 +144,9 @@
 html, body, #root { margin: 0; height: 100%; }
 
 .layout { position: relative; display: grid; grid-template-columns: 300px 1fr; height: 100%; }
-.stage { display: grid; grid-template-rows: 1fr 180px; min-width: 0; }
+.stage { display: grid; grid-template-rows: minmax(220px, 65%) minmax(160px, 35%); min-width: 0; min-height: 0; }
 .viewport { position: relative; min-height: 0; background: var(--stage); }
-.bayplan { border-top: 1px solid var(--line); background: #fff; padding: 16px 20px; }
+.bayplan { border-top: 1px solid var(--line); background: #fff; padding: 10px 14px; min-height: 0; }
 
 .sidebar {
   background: var(--panel); border-right: 1px solid var(--line);
@@ -170,21 +170,35 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 
 .sidebar footer { margin-top: auto; }
 
+.unplaced-list { display: flex; flex-wrap: wrap; gap: 4px; max-height: 140px; overflow-y: auto; }
+.unplaced-item {
+  font-size: 11px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 3px;
+  background: #fff; cursor: grab; user-select: none;
+}
+.unplaced-item-dragging { cursor: grabbing; border-color: var(--signal); background: var(--panel); }
+
 .bayplan-placeholder { display: grid; gap: 4px; }
 
-.bayplan-grid { display: grid; gap: 2px; height: 100%; overflow: auto; align-content: start; }
-.bayplan-deck { display: grid; gap: 2px; }
-.bayplan-deck-label { text-transform: uppercase; letter-spacing: 0.04em; }
-.bayplan-hatchline { height: 2px; background: var(--ink); margin: 2px 0; }
-.bayplan-cells { display: grid; gap: 2px; }
+.bayplan-grid { display: grid; gap: 3px; height: 100%; overflow: auto; align-content: start; font-size: 12px; }
+.bayplan-header { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.bayplan-header strong { font-size: 13px; }
+.bayplan-deck { display: grid; gap: 1px; }
+.bayplan-deck-label { text-transform: uppercase; letter-spacing: 0.04em; font-size: 10px; }
+.bayplan-hatchline { height: 2px; background: var(--ink); margin: 1px 0; }
+.bayplan-cells { display: grid; gap: 1.5px; justify-content: start; }
 .bayplan-cell {
   aspect-ratio: 1; border: 1px solid var(--line); border-radius: 2px; background: var(--panel);
-  cursor: pointer; min-width: 14px;
+  cursor: pointer; transition: outline-color 0.1s ease;
 }
-.bayplan-cell-blank { aspect-ratio: 1; min-width: 14px; }
+.bayplan-cell-blank { aspect-ratio: 1; }
 .bayplan-cell-filled { border-color: transparent; }
 .bayplan-cell-filled:hover { outline: 2px solid var(--ink); outline-offset: -2px; }
-.bayplan-row-labels { display: grid; gap: 2px; font-size: 10px; text-align: center; }
+.bayplan-row-labels { display: grid; gap: 1.5px; font-size: 8px; text-align: center; justify-content: start; }
+
+.bayplan-weightdist { display: grid; gap: 1px; margin-top: 3px; padding-top: 3px; border-top: 1px solid var(--line); }
+.bayplan-weightdist-bars { display: grid; gap: 1.5px; height: 20px; align-items: end; justify-content: start; }
+.bayplan-weightdist-col { display: flex; align-items: flex-end; height: 100%; }
+.bayplan-weightdist-bar { width: 100%; min-height: 2px; background: var(--signal); border-radius: 2px 2px 0 0; }
 .state { padding: 40px; display: grid; gap: 8px; }
 
 .onboarding-panel { grid-column: 1 / -1; padding: 20px; display: grid; gap: 20px; max-width: 960px; margin: 0 auto; overflow-y: auto; height: 100%; }

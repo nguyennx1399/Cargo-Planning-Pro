@@ -27,6 +27,62 @@ export interface Vessel {
    * geometry yet, viewer falls back to its own simplified hull. */
   geometry_id?: string;
   livery_override?: Partial<Livery>;
+  /** Real on-deck layout for breakbulk/project cargo (hatch-cover envelope, structures to keep
+   * clear, resting height, overhead clearance). Absent = the generic fraction-of-LOA deckArea
+   * approximation in engine/breakbulk-deck-area.ts. */
+  breakbulk_deck?: BreakbulkDeckLayout;
+  /** Under-deck stowage areas (tank tops, fixed tweendeck sections), largest first. Absent = the
+   * vessel has no hold data, so breakbulk cargo is weather-deck only. Same convention as breakbulk_deck. */
+  breakbulk_holds?: BreakbulkHoldArea[];
+  /** Real bay positions and tier base heights for this vessel's container slots. Absent = the
+   * generic LAYOUT spacing in lib/geometry.ts. */
+  container_layout?: ContainerLayout;
+}
+
+/** Per-bay container geometry, keyed by 40' bay number. x is in BreakbulkPlacement.x_m's
+ * vessel.length_m/2-symmetric convention (see there); y is scene y (main deck = 0) of the surface
+ * the bottom tier rests on. */
+export interface ContainerLayout {
+  bay_center_x_m: Record<number, number>;
+  on_deck_base_y_m: Record<number, number>;
+  under_deck_base_y_m: Record<number, number>;
+}
+
+/** An under-deck breakbulk stowage area — a BreakbulkDeckLayout with an identity. Its
+ * cargo_base_height_m is negative when the surface is below the main-deck reference (e.g. a tank top). */
+export interface BreakbulkHoldArea extends BreakbulkDeckLayout {
+  id: string;
+  label: string;
+  level: "tweendeck" | "tank_top";
+  hold?: string;
+}
+
+/** A named rectangle cargo must not overlap — crane pedestal, lifeboat davit, etc. Same x_m/z_m
+ * convention as BreakbulkPlacement (see the comment there), NOT AP-referenced ship-frame. */
+export interface BreakbulkKeepOut {
+  id: string;
+  label: string;
+  xMin: number;
+  xMax: number;
+  zMin: number;
+  zMax: number;
+}
+
+/** Vessel-specific breakbulk deck layout. x is in BreakbulkPlacement.x_m's vessel.length_m/2-
+ * symmetric convention (0 = LOA stern end), z is +starboard — convert from ship-frame with
+ * x_m = shipX - lbp_m/2 + length_m/2 when building one from a VesselGeometry. */
+export interface BreakbulkDeckLayout {
+  /** Usable rectangle cargo footprints must stay inside (e.g. the hatch-cover envelope). */
+  area: { xMin: number; xMax: number; zMin: number; zMax: number };
+  keep_out: BreakbulkKeepOut[];
+  /** Height of the cargo resting surface above the main-deck reference (scene y = 0), e.g. the
+   * hatch-cover top. Replaces LAYOUT.hatchHeight for this vessel's breakbulk cargo. */
+  cargo_base_height_m: number;
+  /** Max cargo height above that resting surface before it would hit stowed crane jibs/hooks. */
+  max_cargo_height_m?: number;
+  /** Rated uniform load of the resting surface (t/m²), e.g. hatch covers. Replaces the generic
+   * 200 t per 20 m band demo limit in breakbulkOverweight with rating × band area. */
+  deck_load_t_per_m2?: number;
 }
 
 export type ContainerSize = "20" | "40" | "45";
@@ -93,6 +149,9 @@ export interface BreakbulkPlacement {
   x_m: number; // vessel.length_m/2-symmetric x of the footprint CENTER, +bow (see comment above)
   z_m: number; // transverse position of the footprint CENTER, +starboard (no LOA/LBP ambiguity here)
   rotation_deg: number; // 0 = length_m runs along x (fore-aft); 90 = swapped
+  /** Which stowage area the item rests in: a `vessel.breakbulk_holds[].id`, or absent/"weather_deck"
+   * for the weather deck (the only area before under-deck stowage existed). */
+  area_id?: string;
 }
 
 export interface StowagePlan {

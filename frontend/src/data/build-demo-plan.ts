@@ -6,7 +6,7 @@ import { generateDemoCargo, DEMO_PORTS } from "./demo-cargo-generator";
 import { generateDemoBreakbulkCargo } from "./demo-breakbulk-generator";
 import { naiveFillPlan } from "@/engine/naive-fill-plan";
 import { naiveFillBreakbulk } from "@/engine/naive-fill-breakbulk";
-import { onDeckBayZones } from "@/engine/breakbulk-forbidden-zones";
+import { onDeckBayZones, underDeckBayZones } from "@/engine/breakbulk-forbidden-zones";
 import type { Container, StowagePlan, Vessel } from "@/types/domain";
 
 export function buildDemoVesselAndCargo(): { vessel: Vessel; containers: Container[] } {
@@ -45,6 +45,8 @@ export function buildLoadedDemoPlan(vessel: Vessel, containers: Container[]): St
 export function withBreakbulkCargo(vessel: Vessel, plan: StowagePlan): StowagePlan {
   const breakbulk_cargo = generateDemoBreakbulkCargo();
   const forbiddenZones = onDeckBayZones(vessel, plan.placements);
-  const { placements: breakbulk_placements } = naiveFillBreakbulk(vessel, breakbulk_cargo, forbiddenZones);
+  const { placements: breakbulk_placements } = naiveFillBreakbulk(vessel, breakbulk_cargo, forbiddenZones, {
+    holdForbiddenXZones: underDeckBayZones(vessel, plan.placements),
+  });
   return { ...plan, breakbulk_cargo, breakbulk_placements };
 }

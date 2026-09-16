@@ -8,7 +8,7 @@ import { bayCenterX, rowCenterZ, tierCenterY } from "./geometry";
 
 export function cargoWeightItem(vessel: Vessel, geometry: VesselGeometry, container: Container, slot: Slot): WeightItem {
   const sceneX = bayCenterX(vessel, slot.bay, geometry);
-  const sceneY = tierCenterY(slot.tier);
+  const sceneY = tierCenterY(slot.tier, vessel, slot.bay);
   const sceneZ = rowCenterZ(vessel, slot.row);
   return {
     weight_t: container.weight_t,

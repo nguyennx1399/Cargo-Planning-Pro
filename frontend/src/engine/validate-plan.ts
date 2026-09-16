@@ -12,7 +12,7 @@ import { teuOf } from "./placement-checks";
 import { slotCode } from "./slot-helpers";
 import { buildValidationContext } from "./validation-context";
 import { ALL_RULES } from "./validation-rules";
-import { breakbulkOutOfDeckArea, breakbulkOverlap, breakbulkOverlapsContainer, breakbulkOverweight } from "./breakbulk-validation-rules";
+import { breakbulkInKeepOut, breakbulkOutOfDeckArea, breakbulkOverlap, breakbulkOverlapsContainer, breakbulkOverPressure, breakbulkOverweight, breakbulkTooTall } from "./breakbulk-validation-rules";
 
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 
@@ -36,6 +36,9 @@ export function validatePlan(
     ...breakbulkOverlap(plan.breakbulk_cargo, plan.breakbulk_placements),
     ...breakbulkOverlapsContainer(vessel, plan.breakbulk_cargo, plan.breakbulk_placements, plan.placements),
     ...breakbulkOverweight(vessel, plan.breakbulk_cargo, plan.breakbulk_placements),
+    ...breakbulkInKeepOut(vessel, plan.breakbulk_cargo, plan.breakbulk_placements),
+    ...breakbulkTooTall(vessel, plan.breakbulk_cargo, plan.breakbulk_placements),
+    ...breakbulkOverPressure(vessel, plan.breakbulk_cargo, plan.breakbulk_placements),
   ];
   // errors first; Array.prototype.sort is stable, so rule order is kept within a severity
   violations.sort(

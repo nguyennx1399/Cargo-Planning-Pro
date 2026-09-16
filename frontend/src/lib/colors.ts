@@ -2,16 +2,34 @@ import type { Container, PortCall } from "@/types/domain";
 import type { ColorMode, PaletteMode } from "@/store/usePlanStore";
 
 // Discharge-port palette, ordered by rotation sequence (first discharge port first).
-const POD_PALETTE = ["#C8553D", "#E0A030", "#2E8B8B", "#3D5A99", "#7A5195", "#5B8C3A"];
+const POD_PALETTE = [
+  "#C8553D",
+  "#E0A030",
+  "#2E8B8B",
+  "#3D5A99",
+  "#7A5195",
+  "#5B8C3A",
+];
 
 // Okabe & Ito (2008) qualitative palette — the standard colorblind-safe categorical set,
 // distinguishable under deuteranopia/protanopia/tritanopia (unlike POD_PALETTE, whose
 // red-orange vs green pair is a classic red-green confusion risk for POD mode's 1:1 category
 // distinction). Same length/order convention as POD_PALETTE (index i % length, wraps past 6 ports).
-const POD_PALETTE_COLORBLIND = ["#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00"];
+const POD_PALETTE_COLORBLIND = [
+  "#E69F00",
+  "#56B4E9",
+  "#009E73",
+  "#F0E442",
+  "#0072B2",
+  "#D55E00",
+];
 
-export function podColorMap(ports: PortCall[], paletteMode: PaletteMode = "default"): Record<string, string> {
-  const palette = paletteMode === "colorblind" ? POD_PALETTE_COLORBLIND : POD_PALETTE;
+export function podColorMap(
+  ports: PortCall[],
+  paletteMode: PaletteMode = "default",
+): Record<string, string> {
+  const palette =
+    paletteMode === "colorblind" ? POD_PALETTE_COLORBLIND : POD_PALETTE;
   const out: Record<string, string> = {};
   [...ports]
     .filter((p) => p.sequence > 0)
@@ -35,10 +53,18 @@ const TYPE_COLORS: Record<Container["type"], string> = {
   TANK: "#6C8E5B",
 };
 
-export function containerColor(c: Container, mode: ColorMode, pods: Record<string, string>): string {
+export function containerColor(
+  c: Container,
+  mode: ColorMode,
+  pods: Record<string, string>,
+): string {
   if (mode === "weight") return weightColor(c.weight_t);
   if (mode === "type") return c.imdg_class ? "#D64545" : TYPE_COLORS[c.type];
   return pods[c.pod] ?? "#999999";
 }
 
-export const HIGHLIGHT = { hover: "#FFFFFF", selected: "#FFD23F" };
+export const HIGHLIGHT = {
+  hover: "#FFFFFF",
+  selected: "#FFD23F",
+  ghost: "#42A5F5",
+};

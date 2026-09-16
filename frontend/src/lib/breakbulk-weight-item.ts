@@ -9,7 +9,7 @@
 import type { BreakbulkCargo, BreakbulkPlacement, Vessel } from "@/types/domain";
 import type { VesselGeometry } from "@/types/vessel-geometry";
 import type { WeightItem } from "@/engine/stability-indicative";
-import { LAYOUT } from "./geometry";
+import { cargoBaseHeight } from "@/engine/breakbulk-deck-area";
 
 export function breakbulkWeightItem(vessel: Vessel, geometry: VesselGeometry, item: BreakbulkCargo, placement: BreakbulkPlacement): WeightItem {
   const sceneX = placement.x_m - vessel.length_m / 2;
@@ -22,6 +22,9 @@ export function breakbulkWeightItem(vessel: Vessel, geometry: VesselGeometry, it
     // item's own CG above that resting surface. Omitting hatchHeight would understate kg_m by
     // 0.6m relative to what's actually rendered — a smaller instance of the same "dropped
     // reference-frame offset" bug class the x_m/z_m fix above addresses (code-reviewer finding).
-    kg_m: geometry.particulars.depth_m + LAYOUT.hatchHeight + item.kg_above_base_m,
+    // cargoBaseHeight = LAYOUT.hatchHeight for generic vessels, the real hatch-cover top when the
+    // vessel declares a breakbulk_deck layout — always the same value the mesh builder renders at.
+    // Uses the placement's own stowage area, so cargo on a tank top gets its (much lower) real KG.
+    kg_m: geometry.particulars.depth_m + cargoBaseHeight(vessel, placement.area_id) + item.kg_above_base_m,
   };
 }

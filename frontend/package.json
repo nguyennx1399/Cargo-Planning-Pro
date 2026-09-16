@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:bbc-glb": "node scripts/build-bbc-sao-paulo-glb.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

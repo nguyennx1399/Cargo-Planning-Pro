@@ -22,6 +22,27 @@ describe("breakbulkOutOfDeckArea", () => {
     const placements: BreakbulkPlacement[] = [{ cargo_id: "a", x_m: 100, z_m: 0, rotation_deg: 0 }];
     expect(breakbulkOutOfDeckArea(vessel, cargo, placements)).toHaveLength(0);
   });
+
+  it("does not false-positive on a placement whose center puts an edge EXACTLY at the deck bound (float round-trip noise)", () => {
+    // Regression: found via the real demo breakbulk set against real vessel dimensions (172m/
+    // 27.4m) — a blade placed flush against the stern margin came back as
+    // xMin: 25.799999999999997 vs area.xMin: 25.8 (center +/- extent/2 doesn't always exactly
+    // reconstruct the edge a placer derived the center FROM), which a zero-tolerance comparison
+    // flagged as a real violation for a legitimately-fitting placement.
+    const v: Vessel = { id: "v2", name: "V2", imo: null, length_m: 172, beam_m: 27.4, bays: [], rows: [], stacks: [] };
+    const cargo = [item("a", { length_m: 62, width_m: 4.5 })];
+    // area.xMin for this vessel is 172*0.15 = 25.8; place the item flush against it, same
+    // center-derivation naiveFillBreakbulk itself uses (x + length/2).
+    const xMin = v.length_m * 0.15;
+    const placements: BreakbulkPlacement[] = [{ cargo_id: "a", x_m: xMin + 62 / 2, z_m: 0, rotation_deg: 0 }];
+    expect(breakbulkOutOfDeckArea(v, cargo, placements)).toHaveLength(0);
+  });
+
+  it("still flags a placement that is genuinely, non-trivially outside the deck bound", () => {
+    const cargo = [item("a", { length_m: 20 })];
+    const placements: BreakbulkPlacement[] = [{ cargo_id: "a", x_m: -50, z_m: 0, rotation_deg: 0 }]; // way off, not a float rounding case
+    expect(breakbulkOutOfDeckArea(vessel, cargo, placements)).toHaveLength(1);
+  });
 });
 
 describe("breakbulkOverlap", () => {

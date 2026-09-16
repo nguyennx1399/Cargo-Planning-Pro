@@ -11,7 +11,7 @@
 import * as THREE from "three";
 import type { BreakbulkCargo, BreakbulkPlacement, Vessel } from "@/types/domain";
 import type { MeshData } from "@/engine/mesh-data";
-import { LAYOUT } from "@/lib/geometry";
+import { cargoBaseHeight } from "@/engine/breakbulk-deck-area";
 
 function toMeshData(geometry: THREE.BufferGeometry): MeshData {
   const indexAttr = geometry.getIndex();
@@ -48,7 +48,10 @@ function boxSceneMeshData(lengthM: number, widthM: number, heightM: number, cent
 }
 
 export function buildBreakbulkMesh(item: BreakbulkCargo, placement: BreakbulkPlacement, vessel: Vessel): MeshData {
-  const deckY = LAYOUT.hatchHeight; // same scene-y deck reference on-deck containers use
+  // LAYOUT.hatchHeight (same scene-y deck reference on-deck containers use) unless the vessel
+  // declares its real resting surface, e.g. BBC SAO PAULO's 1.55m-high hatch covers.
+  // The placement's own stowage area: a hold's tank top is below the main-deck reference (negative).
+  const deckY = cargoBaseHeight(vessel, placement.area_id);
   const rotated = placement.rotation_deg === 90;
   const lengthM = rotated ? item.width_m : item.length_m;
   const widthM = rotated ? item.length_m : item.width_m;

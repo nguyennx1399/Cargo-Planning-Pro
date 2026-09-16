@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import type { StowagePlan, ValidationReport, Vessel } from "@/types/domain";
 import type { StabilityResult } from "@/engine/stability-indicative";
 import { useShallow } from "zustand/react/shallow";
@@ -12,25 +12,35 @@ import { SeverityAlertList } from "@/components/severity-alert-list";
 import { ColorModeControl } from "./ColorModeControl";
 import { StabilityPanel } from "./StabilityPanel";
 import { LoadingSequencePanel } from "./LoadingSequencePanel";
+import { isUnderDeck } from "@/engine/breakbulk-deck-area";
 
 interface Props {
   vessel: Vessel;
   plan: StowagePlan;
   report?: ValidationReport;
   attitude: StabilityResult | null;
+  vesselOptions: { id: string; label: string }[];
+  vesselId: string;
+  onVesselChange: (id: string) => void;
   cargoLoaded: boolean;
   onToggleCargo: () => void;
   projectCargoLoaded: boolean;
   onToggleProjectCargo: () => void;
 }
 
-export function Sidebar({ vessel, plan, report, attitude, cargoLoaded, onToggleCargo, projectCargoLoaded, onToggleProjectCargo }: Props) {
+export function Sidebar({
+  vessel, plan, report, attitude, vesselOptions, vesselId, onVesselChange,
+  cargoLoaded, onToggleCargo, projectCargoLoaded, onToggleProjectCargo,
+}: Props) {
   // Shallow-selected subset: Sidebar never reads playbackCount/exaggerate, so this must NOT be
   // a whole-store subscription — that would re-render on every ~60/sec playback tick for nothing.
   const s = usePlanStore(
     useShallow((state) => ({
       selectedId: state.selectedId,
       hoveredId: state.hoveredId,
+      hoveredSlot: state.hoveredSlot,
+      draggingContainerId: state.draggingContainerId,
+      setDraggingContainer: state.setDraggingContainer,
       showHull: state.showHull,
       toggleHull: state.toggleHull,
       showOnDeck: state.showOnDeck,
@@ -60,6 +70,19 @@ export function Sidebar({ vessel, plan, report, attitude, cargoLoaded, onToggleC
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [bayIndex, vessel.bays]);
+  // Ends the drag wherever the mouse is released (E3-04b: ghost preview only, nothing commits
+  // yet) — a window listener rather than an onMouseUp on the list item, since the button is
+  // usually released over the 3D canvas, not back over the sidebar.
+  useEffect(() => {
+    if (!s.draggingContainerId) return;
+    const onMouseUp = () => s.setDraggingContainer(null);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => window.removeEventListener("mouseup", onMouseUp);
+  }, [s.draggingContainerId, s.setDraggingContainer]);
+  const unplacedContainers = useMemo(
+    () => plan.unplaced.map((id) => plan.containers.find((c) => c.id === id)).filter((c) => c !== undefined),
+    [plan.unplaced, plan.containers]
+  );
   const focusId = s.selectedId ?? s.hoveredId;
   const focus = focusId ? plan.containers.find((c) => c.id === focusId) : undefined;
   const focusSlot = focusId ? plan.placements.find((p) => p.container_id === focusId)?.slot : undefined;
@@ -69,17 +92,30 @@ export function Sidebar({ vessel, plan, report, attitude, cargoLoaded, onToggleC
       <header>
         <h1>{vessel.name}</h1>
         <p className="muted">Voyage {plan.voyage}</p>
+        {vesselOptions.length > 1 && (
+          <div className="grid gap-1.5 mt-2">
+            <Label htmlFor="vessel-select">Vessel</Label>
+            <Select value={vesselId} onValueChange={(v) => v && onVesselChange(v)}>
+              <SelectTrigger id="vessel-select" className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {vesselOptions.map((v) => <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </header>
 
       <section>
         <h2>Cargo</h2>
-        <Button variant="outline" onClick={onToggleCargo}>
+        <Button variant="outline" onClick={onToggleCargo} disabled={vessel.bays.length === 0}>
           {cargoLoaded ? "Clear cargo (show empty hull)" : "Load demo cargo"}
         </Button>
         <p className="muted small">
-          {cargoLoaded
-            ? `Naive demo fill, not the real auto-stow solver. 40' containers only — 20' fore/aft half-bay placement isn't implemented yet.`
-            : "Hull, livery and deck fittings only."}
+          {vessel.bays.length === 0
+            ? "Containers need a bay/row/tier slot grid, and this vessel doesn't have one yet — use Project cargo below."
+            : cargoLoaded
+              ? `Naive demo fill, not the real auto-stow solver. 40' containers only — 20' fore/aft half-bay placement isn't implemented yet.`
+              : "Hull, livery and deck fittings only."}
         </p>
       </section>
 
@@ -90,12 +126,23 @@ export function Sidebar({ vessel, plan, report, attitude, cargoLoaded, onToggleC
         </Button>
         <p className="muted small">
           {projectCargoLoaded
-            ? `Wind turbine blades/nacelle/tower sections + yachts — DEMO reference sizes, naive deck placement, not real GA. Some items may be unplaced if containers occupy most of the deck.`
+            ? vessel.breakbulk_deck
+              ? `Wind turbine blades/nacelle/tower sections + yachts — DEMO reference sizes, naive placement on this vessel's real hatch covers and holds (stowage spec), not an optimized stow.`
+              : `Wind turbine blades/nacelle/tower sections + yachts — DEMO reference sizes, naive deck placement, not real GA. Some items may be unplaced if containers occupy most of the deck.`
             : "Breakbulk demo cargo (wind turbine components, yachts) — independent of container load."}
         </p>
-        {projectCargoLoaded && plan.breakbulk_placements.length < plan.breakbulk_cargo.length && (
+        {projectCargoLoaded && plan.breakbulk_cargo.length > 0 && (
           <p className="muted small">
-            {plan.breakbulk_cargo.length - plan.breakbulk_placements.length} of {plan.breakbulk_cargo.length} items unplaced (not enough free deck).
+            {(() => {
+              const inHolds = plan.breakbulk_placements.filter((p) => isUnderDeck(p.area_id)).length;
+              const onDeck = plan.breakbulk_placements.length - inHolds;
+              const unplaced = plan.breakbulk_cargo.length - plan.breakbulk_placements.length;
+              const parts = [`${onDeck} on deck`];
+              if (vessel.breakbulk_holds?.length) parts.push(`${inHolds} in holds`);
+              if (unplaced > 0) parts.push(`${unplaced} unplaced (no room left)`);
+              return parts.join(" · ");
+            })()}
+            {vessel.breakbulk_holds?.length ? " — untick Hull to see cargo in the holds." : ""}
           </p>
         )}
       </section>
@@ -150,10 +197,37 @@ export function Sidebar({ vessel, plan, report, attitude, cargoLoaded, onToggleC
             <dt>Weight</dt><dd>{focus.weight_t} t</dd>
             <dt>Route</dt><dd>{focus.pol} to {focus.pod}</dd>
           </dl>
+        ) : s.hoveredSlot ? (
+          // Proof that raycast-to-slot picking (E3-04a) resolves an empty slot — the actual
+          // drag/drop UI (ghost preview, snap, commit) is E3-04b onward, not built yet.
+          <p className="muted">
+            Empty slot {pad(s.hoveredSlot.bay)}{pad(s.hoveredSlot.row)}{pad(s.hoveredSlot.tier)}
+          </p>
         ) : (
-          <p className="muted">Hover or click a container to inspect it.</p>
+          <p className="muted">Hover or click a container — or an empty slot — to inspect it.</p>
         )}
       </section>
+
+      {unplacedContainers.length > 0 && (
+        <section>
+          <h2>Unplaced ({unplacedContainers.length})</h2>
+          <p className="muted small">
+            Drag onto the hull to preview a slot. Drop doesn't place it yet (E3-04c/d).
+          </p>
+          <div className="unplaced-list">
+            {unplacedContainers.map((c) => (
+              <div
+                key={c.id}
+                className={`unplaced-item${s.draggingContainerId === c.id ? " unplaced-item-dragging" : ""}`}
+                onMouseDown={() => s.setDraggingContainer(c.id)}
+                title={`${c.id} — ${c.size}'${c.high_cube ? " HC" : ""} ${c.type}, ${c.weight_t} t`}
+              >
+                {c.id} · {c.size}'{c.high_cube ? " HC" : ""}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section>
         <h2>Checks</h2>

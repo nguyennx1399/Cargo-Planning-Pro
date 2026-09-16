@@ -2,9 +2,11 @@
  * fetched/tenant-scoped catalog once geometries are persisted server-side. */
 import type { VesselGeometry } from "@/types/vessel-geometry";
 import { buildDemoHorizonGeometry, DEMO_HORIZON_GEOMETRY_ID } from "./demo-horizon-geometry";
+import { buildBbcSaoPauloGeometry, BBC_SAO_PAULO_GEOMETRY_ID } from "./bbc-sao-paulo-geometry";
 
 const CATALOG: Record<string, () => VesselGeometry> = {
   [DEMO_HORIZON_GEOMETRY_ID]: buildDemoHorizonGeometry,
+  [BBC_SAO_PAULO_GEOMETRY_ID]: buildBbcSaoPauloGeometry,
 };
 
 // Built geometries are cached by id so callers get the SAME object reference on every call —

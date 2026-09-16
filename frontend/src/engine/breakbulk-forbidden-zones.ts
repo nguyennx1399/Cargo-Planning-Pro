@@ -18,6 +18,8 @@ const ON_DECK_TIER_THRESHOLD = 80; // matches ContainerInstances.tsx's own on-de
  * BreakbulkPlacement.x_m producer/consumer (see phase-03 plan's Deviations for the bug this
  * caused when the mesh builder briefly assumed x_m WAS true ship-frame). */
 function bayCenterXVesselRelative(vessel: Vessel, bay: number): number {
+  const declared = vessel.container_layout?.bay_center_x_m[bay];
+  if (declared !== undefined) return declared; // already in x_m convention
   const i = vessel.bays.indexOf(bay);
   const pitch = DIM.len40 + LAYOUT.bayGap;
   return vessel.length_m - LAYOUT.bowMargin - (i + 0.5) * pitch;
@@ -32,6 +34,16 @@ function bayCenterXVesselRelative(vessel: Vessel, bay: number): number {
 export function onDeckBayZones(vessel: Vessel, placements: Placement[]): XZone[] {
   const onDeckBays = new Set(placements.filter((p) => p.slot.tier >= ON_DECK_TIER_THRESHOLD).map((p) => p.slot.bay));
   return [...onDeckBays].map((bay) => {
+    const center = bayCenterXVesselRelative(vessel, bay);
+    return { xMin: center - DIM.len40 / 2, xMax: center + DIM.len40 / 2 };
+  });
+}
+
+/** Same as onDeckBayZones for bays that carry an UNDER-deck container — breakbulk cargo in the holds
+ * must not be placed over these. */
+export function underDeckBayZones(vessel: Vessel, placements: Placement[]): XZone[] {
+  const bays = new Set(placements.filter((p) => p.slot.tier < ON_DECK_TIER_THRESHOLD).map((p) => p.slot.bay));
+  return [...bays].map((bay) => {
     const center = bayCenterXVesselRelative(vessel, bay);
     return { xMin: center - DIM.len40 / 2, xMax: center + DIM.len40 / 2 };
   });
