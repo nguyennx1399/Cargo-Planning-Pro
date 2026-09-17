@@ -19,13 +19,14 @@ import type {
   BreakbulkCargo,
   BreakbulkPlacement,
   Placement,
+  Severity,
   StowagePlan,
   Vessel,
   Violation,
 } from "@/types/domain";
 import { buildStowageModel, type StowageModel } from "@/engine/stowage-model";
 import { canPlaceBreakbulk, type BreakbulkPose } from "./placement/can-place-breakbulk";
-import type { PlacementRule } from "./placement/reason";
+import { severityOf, type PlacementRule } from "./placement/reason";
 
 /** A plan view for the predicate: these rules never received a StowagePlan, so the wrappers hand it
  * exactly what they were given. `containers: []` is safe — canPlaceBreakbulk reads only
@@ -68,7 +69,13 @@ function poseOf(placement: BreakbulkPlacement): BreakbulkPose {
  * message already emitted is skipped — which reproduces the pairwise / 20 m band dedup the rules
  * used to do inline, and keeps a pair reported once, from the placement that comes first in plan
  * order. */
-function ruleViolations(vessel: Vessel, model: StowageModel, plan: StowagePlan, rule: PlacementRule): Violation[] {
+function ruleViolations(
+  vessel: Vessel,
+  model: StowageModel,
+  plan: StowagePlan,
+  rule: PlacementRule,
+  severity: Severity = "error",
+): Violation[] {
   const out: Violation[] = [];
   const seen = new Set<string>();
   for (const placement of plan.breakbulk_placements) {
@@ -77,7 +84,7 @@ function ruleViolations(vessel: Vessel, model: StowageModel, plan: StowagePlan, 
     for (const reason of canPlaceBreakbulk(model, plan, item, poseOf(placement), vessel).reasons) {
       if (reason.rule !== rule || seen.has(reason.message)) continue;
       seen.add(reason.message);
-      out.push({ rule, severity: "error", message: reason.message, container_ids: [placement.cargo_id], slots: [] });
+      out.push({ rule, severity, message: reason.message, container_ids: [placement.cargo_id], slots: [] });
     }
   }
   return out;
@@ -89,8 +96,9 @@ const violationsFor = (
   placements: BreakbulkPlacement[],
   containerPlacements: Placement[],
   rule: PlacementRule,
+  severity: Severity = "error",
 ): Violation[] =>
-  ruleViolations(vessel, buildStowageModel(vessel), planView(cargo, placements, containerPlacements), rule);
+  ruleViolations(vessel, buildStowageModel(vessel), planView(cargo, placements, containerPlacements), rule, severity);
 
 export function breakbulkOutOfDeckArea(vessel: Vessel, cargo: BreakbulkCargo[], placements: BreakbulkPlacement[]): Violation[] {
   return violationsFor(vessel, cargo, placements, [], "breakbulk_out_of_deck_area");
@@ -130,4 +138,18 @@ export function breakbulkTooTall(vessel: Vessel, cargo: BreakbulkCargo[], placem
  * catches a single heavy, compact piece that a 20 m band average would hide. */
 export function breakbulkOverPressure(vessel: Vessel, cargo: BreakbulkCargo[], placements: BreakbulkPlacement[]): Violation[] {
   return violationsFor(vessel, cargo, placements, [], "breakbulk_over_pressure");
+}
+
+/** Phase D / D4 — the ONE rule here that reports its own D1 severity instead of the hardcoded
+ * `error`, and the reason the parameter exists: this is a caveat about the VESSEL'S DATA (the area is
+ * a fraction-of-LOA guess, not a GA layout), not a defect in the plan. Reporting it as an `error`
+ * would flip `report.ok` to false for every plan on a vessel with no stowage spec — the whole demo
+ * fleet — the moment one item rests on the weather deck, which contradicts D4 ("generic areas are
+ * droppable"). As a warning it is listed, counted in `kpis.warnings` and never blocks.
+ *
+ * Dedup does the rest: the predicate's message names no item (see `can-place-breakbulk`), so
+ * `ruleViolations`' per-message `seen` set collapses this to ONE line per approximate area rather
+ * than one per item resting on it. */
+export function breakbulkApproximateArea(vessel: Vessel, cargo: BreakbulkCargo[], placements: BreakbulkPlacement[]): Violation[] {
+  return violationsFor(vessel, cargo, placements, [], "breakbulk_approximate_area", severityOf("breakbulk_approximate_area"));
 }

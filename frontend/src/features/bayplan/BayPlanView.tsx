@@ -41,11 +41,13 @@ export function BayPlanView({ vessel, plan }: { vessel: Vessel; plan: StowagePla
   const activeId = usePlanStore(activeContainerId);
   // The 2D notice is the STORE's outcome, not local state (P1/D5): one message, one wording for the
   // 3D release, the 3D pick click and this panel, so the three cannot drift apart (review M3).
-  // Rendered only for a "bayplan" outcome and only for the bay on screen — a notice about a cell in a
-  // bay the planner is no longer looking at would contradict the grid under it. The Sidebar shows it
-  // either way, so nothing is hidden by that.
+  // Rendered only for a "bayplan" SLOT outcome and only for the bay on screen — a notice about a cell
+  // in a bay the planner is no longer looking at would contradict the grid under it, and an outcome
+  // about a project-cargo POSE is not about this grid at all. The Sidebar shows slot outcomes either
+  // way, so nothing is hidden by that. (The pose chip is `DropVerdictChip`'s.)
+  const target = s.dropOutcome?.target;
   const notice =
-    s.dropOutcome && s.dropOutcome.origin === "bayplan" && s.dropOutcome.slot.bay === s.bay
+    s.dropOutcome && s.dropOutcome.origin === "bayplan" && target?.kind === "slot" && target.slot.bay === s.bay
       ? dropOutcomeText(s.dropOutcome)
       : null;
 

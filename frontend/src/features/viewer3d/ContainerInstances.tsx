@@ -6,7 +6,11 @@ import type { Container, StowagePlan, Vessel } from "@/types/domain";
 import { DIM, slotToPosition } from "@/lib/geometry";
 import { HIGHLIGHT, containerColor, podColorMap } from "@/lib/colors";
 import { usePlanStore } from "@/store/usePlanStore";
+import { canBeginContainerMove } from "@/store/begin-container-move";
+import { cargoClickAction } from "@/store/cargo-click-action";
+import { cancelPlacement } from "@/store/commit-placement";
 import { visiblePlacements } from "@/engine/playback-slice";
+import { GESTURE_LAYER, isFrontmostGestureHit } from "./press-ownership";
 
 interface Props {
   vessel: Vessel;
@@ -33,7 +37,7 @@ const DRAG_THRESHOLD_PX = 4;
  */
 export function ContainerInstances({ vessel, plan }: Props) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
-  const { colorMode, paletteMode, showOnDeck, showUnderDeck, bayFilter, hoveredId, selectedId, playbackCount, draggingContainerId, setHovered, setSelected, setDraggingContainer } =
+  const { colorMode, paletteMode, showOnDeck, showUnderDeck, bayFilter, hoveredId, selectedId, playbackCount, draggingContainerId, handKind, setHovered, setSelected, setDraggingContainer, setPicked } =
     usePlanStore(
       useShallow((s) => ({
         colorMode: s.colorMode,
@@ -45,11 +49,22 @@ export function ContainerInstances({ vessel, plan }: Props) {
         selectedId: s.selectedId,
         playbackCount: s.playbackCount,
         draggingContainerId: s.draggingContainerId,
+        handKind: s.inHand?.kind ?? null,
         setHovered: s.setHovered,
         setSelected: s.setSelected,
         setDraggingContainer: s.setDraggingContainer,
+        setPicked: s.setPicked,
       }))
     );
+
+  // A PROJECT-CARGO hand owns the pointer (Phase 03 occlusion fix). These pick volumes sit above the
+  // deck surfaces, and `stopPropagation` in the handlers below is what froze the area ghost wherever a
+  // stack stood in front of the camera: the drop plane never saw a move, so no pose was ever
+  // published. Returning WITHOUT stopping the propagation lets the ray continue to the plane, the same
+  // way the container path already guards itself. A CONTAINER hand is deliberately not in this branch:
+  // its hover/hover-to-inspect behaviour (and its 4 px move threshold) must stay exactly as Phase C
+  // built it.
+  const breakbulkHand = handKind === "breakbulk";
 
   // Where a press started, until it either travels past the threshold (a move) or turns out to be a
   // click. A ref, not state: it must not re-render the mesh mid-press.
@@ -131,13 +146,19 @@ export function ContainerInstances({ vessel, plan }: Props) {
       key={capacity} // remount if capacity changes — a same-count MOVE therefore does not remount
       ref={meshRef}
       args={[undefined, undefined, capacity]}
+      userData={GESTURE_LAYER}
       onPointerDown={(e) => {
         movedRef.current = false; // a fresh press may click: only a move inside it suppresses it
+        // A press belongs to the FRONTMOST object: a box with a project-cargo item in front of it along
+        // the view ray must not arm a container move, or the two gestures race inside one dispatch and
+        // the hand (one field for both kinds) ends up holding the wrong one (`press-ownership.ts`).
+        if (breakbulkHand || !isFrontmostGestureHit(e)) return;
         const id = idAt(e);
         if (!id) return;
         downRef.current = { id, x: e.nativeEvent.clientX, y: e.nativeEvent.clientY };
       }}
       onPointerMove={(e) => {
+        if (breakbulkHand) return; // see `breakbulkHand`: no capture, no hover churn
         const down = downRef.current;
         if (down) {
           // `buttons` is the finger-up check for a release that happened off this mesh (no
@@ -149,6 +170,9 @@ export function ContainerInstances({ vessel, plan }: Props) {
             // `setDraggingContainer` hides this instance, pauses playback (D3) and clears any pick.
             downRef.current = null;
             movedRef.current = true;
+            // A box carrying others cannot go anywhere: say so here rather than arming a hand that
+            // every slot would refuse at the end of the gesture (`begin-container-move.ts`).
+            if (!canBeginContainerMove(vessel, plan, down.id)) return;
             setDraggingContainer(down.id);
             setHovered(null);
             return;
@@ -160,12 +184,32 @@ export function ContainerInstances({ vessel, plan }: Props) {
       }}
       onPointerOut={() => setHovered(null)}
       onClick={(e) => {
+        if (breakbulkHand) return; // the click belongs to the area plane: do not steal it
         e.stopPropagation();
         // Only reached when the press never travelled past the threshold (a started move hides this
-        // instance, so the release cannot hit it): a plain click still selects. The `movedRef` gate is
-        // for the trailing click of a drag-move, which R3F still delivers (M5).
+        // instance, so the release cannot hit it). The `movedRef` gate is for the trailing click of a
+        // drag-move, which R3F still delivers (M5).
         if (movedRef.current) return;
-        setSelected(idAt(e));
+        const id = idAt(e);
+        if (!id) return;
+        // Click-to-place (Phase 01): the first click still selects, a second click on the SAME box
+        // takes it in hand, and clicking the box you are holding puts it back. The rule itself lives in
+        // `cargo-click-action.ts` so both cargo layers read it identically.
+        switch (cargoClickAction(usePlanStore.getState(), id)) {
+          case "select":
+            setSelected(id);
+            break;
+          case "pick":
+            // The SAME gate the press-drag goes through: a box carrying others cannot be lifted by
+            // clicking it any more than by dragging it, and the gate records the reason.
+            if (canBeginContainerMove(vessel, plan, id)) setPicked(id);
+            break;
+          case "putDown":
+            cancelPlacement();
+            break;
+          case "ignore":
+            break;
+        }
       }}
     >
       {/* unit cube, scaled per instance; slight inset so stacks read as separate boxes */}

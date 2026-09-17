@@ -13,8 +13,9 @@
  * The vocabulary is deliberately the engine's own: the reason text comes from the predicate that
  * gated the drop, never from a UI-local rule.
  */
-import type { Slot } from "@/types/domain";
+import type { BreakbulkCargo, Slot } from "@/types/domain";
 import { blocks, type PlacementResult, type Reason } from "@/engine/placement/reason";
+import type { BreakbulkPose } from "@/engine/placement/can-place-breakbulk";
 import { slotCode } from "@/engine/slot-helpers";
 import type { DropVerdict } from "./drop-verdict";
 
@@ -23,13 +24,26 @@ import type { DropVerdict } from "./drop-verdict";
  * pointing at would be describing the wrong grid. */
 export type DropOrigin = "scene" | "bayplan";
 
+/**
+ * What a drop was aimed at. A container lands in a discrete `Slot`; project cargo lands at a free
+ * `BreakbulkPose` inside an area (Phase D). ONE record type for both, discriminated by `kind`, so the
+ * single outcome record and every reader of it never need a parallel field — two fields describing
+ * one drop is exactly the failure Phase 03's risk table guards against.
+ */
+export type DropTarget = { kind: "slot"; slot: Slot } | { kind: "pose"; pose: BreakbulkPose };
+
+/** The two doors to `DropTarget`, so a call site never spells the discriminant itself. */
+export const slotTarget = (slot: Slot): DropTarget => ({ kind: "slot", slot });
+export const poseTarget = (pose: BreakbulkPose): DropTarget => ({ kind: "pose", pose });
+
 /** The outcome of the LAST committed drop, kept in `usePlanStore` after the gesture it ended so it
- * outlives the pointer leaving the slot (P1/D5; review M2/M3/M6). Written by `commitPlacement` only —
- * never assembled by a component — and cleared by the lifetime table documented in
- * `store/commit-placement.ts`. */
+ * outlives the pointer leaving the target (P1/D5; review M2/M3/M6). Written by
+ * `store/commit-placement.ts` only — never assembled by a component — and cleared by the lifetime
+ * table documented there. */
 export interface DropOutcome {
-  /** The slot the drop was attempted on — what `setHoveredSlot` compares against to decide staleness. */
-  slot: Slot;
+  /** The target the drop was attempted on — what `setHoveredSlot`/`setHoveredPose` compare against to
+   * decide staleness (within the same `kind` only: a slot and a pose are different questions). */
+  target: DropTarget;
   /** A `Reason.message` verbatim (see `quotedReason`), never a re-worded copy. */
   message: string;
   /** false = refused, nothing was written. true = it LANDED and the reason is recorded: the plan-wide
@@ -76,16 +90,36 @@ export function quotedReason(result: PlacementResult): Reason | null {
 }
 
 /** The record a commit leaves behind, or null when there is nothing to record (a clean accept — see
- * the lifetime table in `commit-placement.ts`). */
-export function dropOutcomeOf(
-  result: PlacementResult,
-  slot: Slot,
-  origin: DropOrigin,
-): DropOutcome | null {
+ * the lifetime table in `commit-placement.ts`). Private: the two typed doors below are the call
+ * sites, so a slot outcome and a pose outcome cannot be built through different code. */
+function outcomeOf(result: PlacementResult, target: DropTarget, origin: DropOrigin): DropOutcome | null {
   const reason = quotedReason(result);
   if (!reason) return null;
-  return { slot, message: reason.message, ok: result.ok, origin };
+  return { target, message: reason.message, ok: result.ok, origin };
 }
+
+/** The SLOT door — signature unchanged from P1, which is what keeps the existing outcome tests and
+ * both container commit triggers reading exactly as they did. */
+export function dropOutcomeOf(result: PlacementResult, slot: Slot, origin: DropOrigin): DropOutcome | null {
+  return outcomeOf(result, slotTarget(slot), origin);
+}
+
+/** The POSE door (Phase D): the same record for a project-cargo drop, whose target has no slot. */
+export function dropPoseOutcomeOf(result: PlacementResult, pose: BreakbulkPose, origin: DropOrigin): DropOutcome | null {
+  return outcomeOf(result, poseTarget(pose), origin);
+}
+
+/** The ONE sentence about a hover verdict, shared by the slot and the pose headline — a container and
+ * a project-cargo item must never describe the same verdict with different words (the reason one
+ * would drift is that the two headlines are built in two places). */
+const verdictDetail = (verdict: DropVerdict): { tone: DropTone; detail: string } => {
+  const message = verdict.reason?.message ?? REASON_FALLBACK;
+  if (verdict.verdict === "invalid") return { tone: "error", detail: `Refused: ${message}` };
+  if (verdict.verdict === "warning") {
+    return { tone: "warn", detail: `Recorded, not refused — the checks below will list it: ${message}` };
+  }
+  return { tone: "ok", detail: "Clean drop — no rule is triggered." };
+};
 
 /**
  * What a drop on `slot` would do, as `{tone, headline, detail}` (requirement 1). The wording is
@@ -97,17 +131,26 @@ export function dropOutcomeOf(
  * WHICH container is being placed.
  */
 export function dropVerdictText(slot: Slot, verdict: DropVerdict, containerId: string): DropFeedback {
-  const headline = `Slot ${slotCode(slot)} — placing ${containerId}`;
-  const message = verdict.reason?.message ?? REASON_FALLBACK;
-  if (verdict.verdict === "invalid") return { tone: "error", headline, detail: `Refused: ${message}` };
-  if (verdict.verdict === "warning") {
-    return {
-      tone: "warn",
-      headline,
-      detail: `Recorded, not refused — the checks below will list it: ${message}`,
-    };
-  }
-  return { tone: "ok", headline, detail: "Clean drop — no rule is triggered." };
+  return { headline: `Slot ${slotCode(slot)} — placing ${containerId}`, ...verdictDetail(verdict) };
+}
+
+/**
+ * The POSE-shaped headline (Phase D): a project-cargo item has no slot code, so the target is named
+ * by the area the pointer is in and the snapped position it is aiming at — plus the rotation when one
+ * is set, because a rotated footprint is the one thing the translucent ghost cannot be read for at a
+ * glance and `R` would otherwise have no feedback outside the model. `areaLabel` is passed in rather
+ * than looked up: this module stays free of the stowage model, and the caller that owns the hovered
+ * area (the chip) already has the label.
+ */
+export function dropPoseVerdictText(
+  areaLabel: string,
+  pose: BreakbulkPose,
+  verdict: DropVerdict,
+  itemId: BreakbulkCargo["id"],
+): DropFeedback {
+  const at = `${pose.x_m.toFixed(1)} / ${pose.z_m.toFixed(1)} m`;
+  const angle = pose.rotation_deg === 90 ? " · 90°" : "";
+  return { headline: `${areaLabel} ${at}${angle} — placing ${itemId}`, ...verdictDetail(verdict) };
 }
 
 /**
@@ -125,35 +168,6 @@ export function dropOutcomeText(outcome: DropOutcome): DropFeedback {
     : { tone: "error", headline: null, detail: `Not placed — ${outcome.message}` };
 }
 
-/** Everything the cursor's appearance depends on (requirement 6). */
-export interface DropCursorState {
-  /** A drag is in flight — the button is held (a list drag, or a 3D move past the 4 px threshold). */
-  dragging: boolean;
-  /** A container is in hand: dragged OR picked. */
-  active: boolean;
-  /** The verdict of the slot under the cursor, or null when no slot is hovered. */
-  verdict: DropVerdict["verdict"] | null;
-  /** A placed container is under the cursor, with nothing in hand. */
-  overContainer: boolean;
-}
-
-/**
- * The viewport's cursor class — the truth table, first match wins (requirement 6; acceptance step 26).
- * Returned as Tailwind utility names, spelled out as literals so Tailwind's scanner generates them:
- *  - a drag in flight            → closed hand;
- *  - in hand, over a refused slot → not-allowed (the next release would be refused);
- *  - in hand, over a slot         → pointer (it would land);
- *  - in hand, over anything else  → crosshair ("point at a slot");
- *  - nothing in hand, over a box  → open hand: this is what makes the ≤4 px select / >4 px move
- *                                   threshold discoverable BEFORE the gesture starts;
- *  - otherwise                    → "" (the default arrow).
- */
-export function dropCursorClass(state: DropCursorState): string {
-  if (state.dragging) return "cursor-grabbing";
-  if (state.active) {
-    if (state.verdict === "invalid") return "cursor-not-allowed";
-    if (state.verdict !== null) return "cursor-pointer";
-    return "cursor-crosshair";
-  }
-  return state.overContainer ? "cursor-grab" : "";
-}
+/** The cursor truth table moved to its own module for the 200-LOC rule; re-exported here because
+ * this is the import every reader has always used (and `lib/__tests__/drop-feedback.test.ts`). */
+export { dropCursorClass, type DropCursorState } from "./drop-cursor";

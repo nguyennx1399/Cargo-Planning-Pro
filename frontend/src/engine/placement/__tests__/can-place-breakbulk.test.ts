@@ -80,7 +80,10 @@ describe("canPlaceBreakbulk", () => {
     const vessel: Vessel = { id: "v2", name: "V2", imo: null, length_m: 172, beam_m: 27.4, bays: [], rows: [], stacks: [] };
     const blade = item("A", { length_m: 62, width_m: 4.5 });
     const result = check(vessel, planWith([], []), blade, { x_m: 25.8 + 31, z_m: 0 });
-    expect(result).toEqual({ ok: true, reasons: [] });
+    // Nothing BLOCKS (that is the float round-trip this test exists for). This hull declares no deck
+    // layout, so the D4 approximation is recorded alongside — see approximate-area-warning.test.ts.
+    expect(result.ok).toBe(true);
+    expect(result.reasons.map((r) => r.rule)).toEqual(["breakbulk_approximate_area"]);
   });
 
   it("rejects a footprint over a declared keep-out structure", () => {

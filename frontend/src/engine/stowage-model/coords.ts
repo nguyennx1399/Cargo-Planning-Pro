@@ -69,6 +69,19 @@ export function rectContainsRect(outer: Rect, inner: Rect): boolean {
   );
 }
 
+/** The part of `inner` that lies inside `outer`, or `null` when the two do not overlap at all —
+ * edges that merely touch are not an overlap, matching `rectsOverlap`. Used to clip a keep-out to the
+ * area it blocks (D-P4): BBC's crane foundations sit partly outboard of the usable rect, and drawing
+ * them whole would show obstacles on deck space that no footprint can reach. */
+export function clipRect(inner: Rect, outer: Rect): Rect | null {
+  const xMin = Math.max(inner.xMin, outer.xMin);
+  const xMax = Math.min(inner.xMax, outer.xMax);
+  const zMin = Math.max(inner.zMin, outer.zMin);
+  const zMax = Math.min(inner.zMax, outer.zMax);
+  if (xMin >= xMax || zMin >= zMax) return null;
+  return { xMin, xMax, zMin, zMax };
+}
+
 /** Round `value` to the nearest multiple of `step` (e.g. project-cargo snapping, D2). */
 export function snap(value: number, step: number): number {
   return Math.round(value / step) * step;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  clipRect,
   placementToScene,
   placementXToSceneX,
   rectContainsPoint,
@@ -79,6 +80,27 @@ describe("rectContainsRect", () => {
   it("rejects one that pokes out", () => {
     expect(rectContainsRect(rect, { xMin: 0, xMax: 10, zMin: -3, zMax: 2 })).toBe(false);
     expect(rectContainsRect(rect, { xMin: -0.1, xMax: 5, zMin: 0, zMax: 1 })).toBe(false);
+  });
+});
+
+describe("clipRect", () => {
+  const outer = { xMin: 0, xMax: 10, zMin: -2, zMax: 2 };
+
+  it("keeps the overlapping part (the keep-out that straddles the usable rect, D-P4)", () => {
+    // BBC's crane pedestal: z -11..-7 against a deck z ±9.85 — clipped at the deck edge, inboard edge kept.
+    expect(clipRect({ xMin: 4, xMax: 6, zMin: -9.85, zMax: -7 }, { xMin: 0, xMax: 10, zMin: -9.85, zMax: 9.85 }))
+      .toEqual({ xMin: 4, xMax: 6, zMin: -9.85, zMax: -7 });
+    expect(clipRect({ xMin: -5, xMax: 5, zMin: -1, zMax: 1 }, outer)).toEqual({ xMin: 0, xMax: 5, zMin: -1, zMax: 1 });
+  });
+
+  it("returns the inner rect itself when it is fully inside", () => {
+    expect(clipRect({ xMin: 2, xMax: 8, zMin: -1, zMax: 1 }, outer)).toEqual({ xMin: 2, xMax: 8, zMin: -1, zMax: 1 });
+  });
+
+  it("returns null when they do not overlap — an edge that merely touches is not an overlap", () => {
+    expect(clipRect({ xMin: 10, xMax: 14, zMin: -2, zMax: 2 }, outer)).toBeNull(); // touching on x
+    expect(clipRect({ xMin: 0, xMax: 10, zMin: 2, zMax: 6 }, outer)).toBeNull(); // touching on z
+    expect(clipRect({ xMin: 11, xMax: 14, zMin: -6, zMax: -3 }, outer)).toBeNull(); // clear of it entirely
   });
 });
 

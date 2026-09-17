@@ -22,6 +22,7 @@ export function ViewOptionsPanel({ vessel }: { vessel: Vessel }) {
       toggleUnderDeck: state.toggleUnderDeck,
       bayFilter: state.bayFilter,
       setBayFilter: state.setBayFilter,
+      resetView: state.resetView,
     }))
   );
   const bayIndex = s.bayFilter === null ? -1 : vessel.bays.indexOf(s.bayFilter);
@@ -33,6 +34,12 @@ export function ViewOptionsPanel({ vessel }: { vessel: Vessel }) {
   return (
     <section>
       <h2>Show</h2>
+      {/* The recovery for zoom-to-pointer: the wheel moves the orbit target as it zooms, so the ship can
+          end up off-centre with no way back. Sits with the other view controls because that is where a
+          planner looks when the view is wrong. */}
+      <Button variant="outline" size="sm" className="self-start" onClick={s.resetView}>
+        Reset view
+      </Button>
       <div className="flex items-center gap-2">
         <Checkbox id="show-hull" checked={s.showHull} onCheckedChange={s.toggleHull} />
         <Label htmlFor="show-hull">Hull</Label>

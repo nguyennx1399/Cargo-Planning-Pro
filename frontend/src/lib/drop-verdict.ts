@@ -18,9 +18,15 @@
  * MEMOISED per (plan, candidate) — its object identity is what keeps `canPlaceContainer`'s plan-keyed
  * `indexCache` warm; a fresh strip per call (which a MOVE needs on every pointer move) rebuilt the
  * whole plan index each time (review M4).
+ *
+ * ONE PREDICATE, TWO TARGETS (Phase D): a container has a slot and a project-cargo item has a POSE.
+ * This module owns the slot-shaped answer (`verdictForSlot`/`verdictsForSlots`, plus the shared
+ * `toVerdict` folding and the `areaVisible` half of the viewer rule); the pose-shaped one is its
+ * sibling `lib/pose-verdict.ts`, under the same own-placement strip and one-entry memo discipline, so
+ * "what would dropping here do" is answered once per pointer move whichever kind of item is in hand.
  */
 import type { Container, Slot, StowagePlan, Vessel } from "@/types/domain";
-import type { SlotDef } from "@/engine/stowage-model";
+import type { SlotDef, StowageArea } from "@/engine/stowage-model";
 import { buildStowageModel } from "@/engine/stowage-model";
 import { canPlaceContainer } from "@/engine/placement/can-place-container";
 import { verdictOf, type SlotVerdict } from "@/engine/placement/placeholders";
@@ -65,6 +71,15 @@ export function slotVisible(slot: SlotDef, vessel: Vessel, view: SlotViewFilter)
   return slotInBay(slot, view.bayFilter, vessel);
 }
 
+/** The same rule for AREAS: the deck toggles, and deliberately nothing else. A bay is a container
+ * notion (`slotInBay` names the 40' parent of a 20' half) and has no analogue for a rectangle that
+ * spans the ship, so there is no bay filter here — filtering areas "for symmetry" would hide a
+ * surface the pointer can still be dropped on, and the visible layer would stop matching the
+ * pickable one. */
+export function areaVisible(area: StowageArea, view: SlotViewFilter): boolean {
+  return area.onDeck ? view.showOnDeck : view.showUnderDeck;
+}
+
 export interface DropVerdict {
   verdict: SlotVerdict;
   /** The ONE line to show. Refused → the first blocking reason (a warning is never shown as the
@@ -95,7 +110,10 @@ function subjectStrippedPlan(plan: StowagePlan, containerId: string): StowagePla
   return stripped;
 }
 
-function toVerdict(result: PlacementResult): DropVerdict {
+/** Fold a predicate result into the tint state + the ONE reason to quote (see `DropVerdict.reason`).
+ * Exported because the pose-shaped sibling `verdictForPose` folds through the same rule — a container
+ * and a project-cargo item must never describe the same outcome differently. */
+export function toVerdict(result: PlacementResult): DropVerdict {
   const verdict = verdictOf(result);
   const reason =
     verdict === "invalid"

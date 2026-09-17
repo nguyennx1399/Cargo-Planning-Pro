@@ -101,7 +101,9 @@ describe("the committed outcome", () => {
   it("never words an applied drop as a refusal, and records the origin", () => {
     const slot: Slot = { bay: 2, row: 2, tier: 82 };
     const recorded = dropOutcomeOf({ ok: true, reasons: [{ rule: "overstow", message: "m", severity: "warning" }] }, slot, "bayplan")!;
-    expect(recorded).toEqual({ slot, message: "m", ok: true, origin: "bayplan" });
+    // The record names its target through the union (Phase D): a slot for a container, a pose for
+    // project cargo — one record, one shape, whichever kind of cargo it is about.
+    expect(recorded).toEqual({ target: { kind: "slot", slot }, message: "m", ok: true, origin: "bayplan" });
     expect(dropOutcomeText(recorded)).toEqual({
       tone: "warn",
       headline: null,

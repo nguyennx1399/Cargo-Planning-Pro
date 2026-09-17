@@ -24,7 +24,7 @@ import {
   type StowageModel,
 } from "@/engine/stowage-model";
 import { resultOf, type PlacementResult, type Reason } from "./reason";
-import { pad2, reason } from "./placement-reason-builders";
+import { approximateAreaReason, pad2, reason } from "./placement-reason-builders";
 
 /** DEMO approximation, not real structural deck strength — see plan.md "Ngoài phạm vi". */
 const OVERWEIGHT_BAND_M = 20;
@@ -153,6 +153,12 @@ export function canPlaceBreakbulk(
         reasons.push(reason("breakbulk_overweight", `${where} ${band.start.toFixed(0)}-${band.end.toFixed(0)}m: ${weight.toFixed(0)}t exceeds the ${what}`));
       }
     }
+    // D4: with no GA layout for this vessel the area's own BOUNDARY is a guess, so every drop in it
+    // records a warning-severity caveat — allowed, badged and listed, never a refusal (the wording
+    // and the dedup it buys live in `approximateAreaReason`). Pushed LAST of the area reasons so an
+    // accepted-with-warnings drop still quotes the concrete limit first (the 20 m band weight) and
+    // this caveat is the fallback line, never a red herring.
+    if (area.source === "generic") reasons.push(approximateAreaReason(area));
   }
 
   // Overlap is checked whatever the area is (the plan rule groups by area id, known or not); the

@@ -12,7 +12,7 @@ import { teuOf } from "./placement-checks";
 import { slotCode } from "./slot-helpers";
 import { buildValidationContext } from "./validation-context";
 import { ALL_RULES } from "./validation-rules";
-import { breakbulkInKeepOut, breakbulkOutOfDeckArea, breakbulkOverlap, breakbulkOverlapsContainer, breakbulkOverPressure, breakbulkOverweight, breakbulkTooTall } from "./breakbulk-validation-rules";
+import { breakbulkApproximateArea, breakbulkInKeepOut, breakbulkOutOfDeckArea, breakbulkOverlap, breakbulkOverlapsContainer, breakbulkOverPressure, breakbulkOverweight, breakbulkTooTall } from "./breakbulk-validation-rules";
 
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 
@@ -39,6 +39,9 @@ export function validatePlan(
     ...breakbulkInKeepOut(vessel, plan.breakbulk_cargo, plan.breakbulk_placements),
     ...breakbulkTooTall(vessel, plan.breakbulk_cargo, plan.breakbulk_placements),
     ...breakbulkOverPressure(vessel, plan.breakbulk_cargo, plan.breakbulk_placements),
+    // D4: the area-provenance caveat, so a drop the engine allowed as a warning really is listed
+    // ("Recorded, not blocked — the checks below will list it: …"). Warning severity: see the wrapper.
+    ...breakbulkApproximateArea(vessel, plan.breakbulk_cargo, plan.breakbulk_placements),
   ];
   // errors first; Array.prototype.sort is stable, so rule order is kept within a severity
   violations.sort(

@@ -20,6 +20,14 @@
  * not promise a green slot the report then blocks. `overstow` is a warning in both places.
  * `twenty_on_forty` is a blocking `error` in both places too, and lives here rather than in the
  * report-only vocabulary because a 20' half-slot is a real drop position.
+ *
+ * `breakbulk_approximate_area` (Phase D / D4) is the odd one out and deliberately so: it says nothing
+ * about the CANDIDATE, only about the DATA — the area is a fraction-of-LOA guess, not a GA layout.
+ * D1 puts it with the overridable limits ("warn and are recorded"), so a drop there is allowed; but
+ * its plan-wide counterpart reports it at this table's own severity (see
+ * `breakbulk-validation-rules.ts`), because a caveat about the vessel's data must never make
+ * `report.ok` false on a vessel that has no GA to load — which is every vessel without a stowage
+ * spec, i.e. the whole demo fleet.
  */
 import type { Severity } from "@/types/domain";
 
@@ -43,6 +51,8 @@ export const PLACEMENT_RULES = [
   "breakbulk_too_tall",
   "breakbulk_overweight",
   "breakbulk_over_pressure",
+  // D4: the area itself is an approximation, not the candidate — a caveat, never a refusal.
+  "breakbulk_approximate_area",
   // store-level guards (not validation rules): the requested id is not actionable
   "unknown_container",
   "unknown_breakbulk_cargo",
@@ -81,6 +91,7 @@ export const RULE_SEVERITY: Readonly<Record<PlacementRule, Severity>> = {
   breakbulk_too_tall: "error",
   breakbulk_overweight: "warning",
   breakbulk_over_pressure: "warning",
+  breakbulk_approximate_area: "warning",
   unknown_container: "error",
   unknown_breakbulk_cargo: "error",
   no_plan: "error",

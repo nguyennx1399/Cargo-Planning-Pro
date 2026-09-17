@@ -5,7 +5,13 @@ import type { Container, StowagePlan, Vessel } from "@/types/domain";
 import { DIM } from "@/lib/geometry";
 import { DROP_TINT, slotVisible, verdictsForSlots } from "@/lib/drop-verdict";
 import { validSlotsFor } from "@/engine/placement/placeholders";
+import { slotEnvelopes } from "@/lib/slot-envelope";
 import { activeContainerId, usePlanStore } from "@/store/usePlanStore";
+import { AreaRectOutline } from "./area-rect-graphics";
+
+/** How far the envelope outline floats above its deck level — the same `LIFT` discipline
+ * `AreaPlaceholders` follows, kept small so the border reads as lying ON the floor. */
+const ENVELOPE_LIFT = 0.03;
 
 const LENGTH_BY_SIZE: Record<Container["size"], number> = {
   "20": DIM.len20,
@@ -25,6 +31,12 @@ const LENGTH_BY_SIZE: Record<Container["size"], number> = {
  * Matrices are translation-only from `SlotDef.center` (the model's own centre, never recomputed) —
  * the geometry carries the candidate's real footprint, which is uniform across the set because every
  * slot in it belongs to the same container.
+ *
+ * Phase 02 adds the ENVELOPE: one outline per deck level around the bounding rect of that level's valid
+ * slots, so the planner sees the region at a glance instead of reading a cloud of boxes. It is drawn
+ * from the SAME filtered set as the boxes (so it cannot disagree with them), with the same
+ * `AreaRectOutline` the project-cargo layer uses and the same `DROP_TINT` colour. Deliberately a ROUGH
+ * answer — see `lib/slot-envelope.ts` on what a bounding rect over-claims and why that is accepted.
  */
 export function SlotPlaceholders({ vessel, plan }: { vessel: Vessel; plan: StowagePlan }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
@@ -86,15 +98,26 @@ export function SlotPlaceholders({ vessel, plan }: { vessel: Vessel; plan: Stowa
   const height = container.high_cube ? DIM.heightHC : DIM.height;
 
   return (
-    <instancedMesh
-      key={capacity} // remount if the valid-slot count changes, same as ContainerInstances
-      ref={meshRef}
-      args={[undefined, undefined, capacity]}
-      raycast={() => null}
-    >
-      <boxGeometry args={[LENGTH_BY_SIZE[container.size], height, DIM.width]} />
-      {/* the material stays white: per-instance `instanceColor` multiplies it into the verdict tint */}
-      <meshBasicMaterial transparent opacity={0.18} depthWrite={false} />
-    </instancedMesh>
+    <group>
+      <instancedMesh
+        key={capacity} // remount if the valid-slot count changes, same as ContainerInstances
+        ref={meshRef}
+        args={[undefined, undefined, capacity]}
+        raycast={() => null}
+      >
+        <boxGeometry args={[LENGTH_BY_SIZE[container.size], height, DIM.width]} />
+        {/* the material stays white: per-instance `instanceColor` multiplies it into the verdict tint */}
+        <meshBasicMaterial transparent opacity={0.18} depthWrite={false} />
+      </instancedMesh>
+      {slotEnvelopes(slots, height).map((envelope) => (
+        <AreaRectOutline
+          key={envelope.deck}
+          rect={envelope.rect}
+          lengthM={vessel.length_m}
+          y={envelope.y + ENVELOPE_LIFT}
+          color={DROP_TINT.valid}
+        />
+      ))}
+    </group>
   );
 }

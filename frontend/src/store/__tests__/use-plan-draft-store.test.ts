@@ -145,12 +145,20 @@ describe("usePlanDraftStore", () => {
   });
 
   it("places, moves and unplaces project cargo through the same predicate", () => {
+    // `makeTestVessel` declares no deck layout, so its weather deck is the D4 approximation and every
+    // project-cargo drop in it records that warning. `ok: true` is the assertion that matters here —
+    // the commit goes through, and the recorded reason is the SAME one the predicate returned.
+    const approximate = {
+      rule: "breakbulk_approximate_area",
+      message: "weather deck: approximate area — no GA layout, so its extent is a fraction-of-LOA estimate",
+      severity: "warning",
+    };
     const plan = { ...makePlan([], []), breakbulk_cargo: [projectCargo("BB1")] };
     load(plan);
-    expect(state().placeBreakbulk("BB1", { x_m: 30, z_m: 0 })).toEqual({ ok: true, reasons: [] });
+    expect(state().placeBreakbulk("BB1", { x_m: 30, z_m: 0 })).toEqual({ ok: true, reasons: [approximate] });
     expect(state().plan!.breakbulk_placements).toEqual([{ cargo_id: "BB1", x_m: 30, z_m: 0, rotation_deg: 0 }]);
 
-    expect(state().moveBreakbulk("BB1", { x_m: 35, z_m: 0 })).toEqual({ ok: true, reasons: [] });
+    expect(state().moveBreakbulk("BB1", { x_m: 35, z_m: 0 })).toEqual({ ok: true, reasons: [approximate] });
     expect(state().plan!.breakbulk_placements).toEqual([{ cargo_id: "BB1", x_m: 35, z_m: 0, rotation_deg: 0 }]);
 
     const before = state().plan!;

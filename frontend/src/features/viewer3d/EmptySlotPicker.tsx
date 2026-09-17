@@ -49,10 +49,17 @@ import { commitPlacement } from "@/store/commit-placement";
  * The parity filter stays RENDERING-ONLY: it keeps a 40' candidate's box (which reaches 6.7 m off its
  * own centre) from being stolen by a neighbouring 20' HALF's box, while the commit gate remains
  * `canPlaceContainer` in the draft store — no UI-local rule can refuse a drop.
+ *
+ * MOUNTED ONLY WHILE NO PROJECT-CARGO ITEM IS IN HAND ("never both layers", Phase D open question 2):
+ * the container pick volumes and the area drop planes would otherwise fight for the same pointer,
+ * and this layer wins every time because it is nearer the camera. The gate is inside this component
+ * rather than at the call site so the layer that owns the pointer is also the layer that says when it
+ * is live.
  */
 export function EmptySlotPicker({ vessel, plan }: { vessel: Vessel; plan: StowagePlan }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const setHoveredSlot = usePlanStore((s) => s.setHoveredSlot);
+  const hand = usePlanStore((s) => s.inHand);
   const activeId = usePlanStore(activeContainerId);
   const view = usePlanStore(
     useShallow((s) => ({
@@ -132,6 +139,14 @@ export function EmptySlotPicker({ vessel, plan }: { vessel: Vessel; plan: Stowag
   };
 
   const capacity = slots.length || 1;
+
+  // "Never both layers" (Phase D open question 2) — the hand's KIND decides which pick layer is live,
+  // and the decision lives HERE, next to the commit it gates, not in VesselScene. These pick volumes
+  // sit ABOVE the deck surfaces and their handlers call `stopPropagation`, so leaving them mounted
+  // under a project-cargo hand would swallow the pointer before it ever reached an area's drop plane
+  // and freeze the ghost over every bay. With nothing in hand the picker is mounted exactly as before,
+  // so an idle scene — and every container gesture — is unchanged.
+  if (hand?.kind === "breakbulk") return null;
 
   return (
     <instancedMesh

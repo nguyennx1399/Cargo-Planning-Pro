@@ -24,10 +24,28 @@ const COMPONENT_GROUP_COLORS: Record<string, string> = {
  * the vessel has a `geometry_id` with generated offsets; a pre-baked GLB (dynamic-vessel-switching
  * plan) when it has `hull.source === "mesh"` instead; otherwise falls back to the old simplified
  * box hull (unchanged) so any vessel without geometry still renders.
+ *
+ * `hidden` is the caller's "something is in hand" flag: the shell plating sits between the camera and
+ * the targets the planner is aiming at — a tank top for project cargo, the under-deck placeholders for
+ * a container — so the hull steps aside for the duration of the gesture instead of the planner having
+ * to untick the viewer's own hull toggle and remember to tick it back. It applies to BOTH kinds of
+ * cargo and to both gesture modes (a pick has no button held, and must still get the same view); the
+ * narrower "project cargo AND under-deck shown" rule it started as (D-P5) left a container drag staring
+ * at the plating. It is a PROP rather than a store read so this file stays free of the hand.
+ *
+ * The viewer's own `showHull` toggle still wins (`!showHull || hidden` below): unticking Hull hides it
+ * with nothing in hand, and no gesture re-shows it.
+ *
+ * Hiding DOES remove the three.js objects from the scene — what a hidden path preserves is the
+ * expensive WORK behind them: the lofted geometry stays in its `useMemo` and the GLB stays in drei's
+ * `useGLTF` cache, because every hook runs before the early return. So a gesture start never re-lofts a
+ * hull or re-parses a GLB. Keep the early return where it is (after the hooks) — moving the hide up
+ * into a conditional mount, or into the caller, is what would make each gesture pay for the rebuild.
+ *
  * TODO(phase-3+): funnel logo decal, water-transparency toggle and draft marks all wait on
  * P1-demo phase-04's `Water`, which doesn't exist yet.
  */
-export function Hull({ vessel }: { vessel: Vessel }) {
+export function Hull({ vessel, hidden = false }: { vessel: Vessel; hidden?: boolean }) {
   const geometry = vessel.geometry_id ? getVesselGeometry(vessel.geometry_id) : undefined;
   if (geometry?.hull.offsets) {
     // LOD (E3-01c): past this distance, hull surface detail (plating, hatch covers) isn't
@@ -37,8 +55,8 @@ export function Hull({ vessel }: { vessel: Vessel }) {
     const farDistance = Math.max(200, vessel.length_m * 1.3);
     return (
       <Detailed distances={[0, farDistance]}>
-        <LoftedHull vessel={vessel} geometry={geometry} />
-        <SimpleBoxHull vessel={vessel} />
+        <LoftedHull vessel={vessel} geometry={geometry} hidden={hidden} />
+        <SimpleBoxHull vessel={vessel} hidden={hidden} />
       </Detailed>
     );
   }
@@ -46,12 +64,12 @@ export function Hull({ vessel }: { vessel: Vessel }) {
     // Suspense fallback covers the GLB streaming in; SimpleBoxHull also still catches the case
     // where the file is genuinely missing/404 (no error boundary here — see GltfHull comment).
     return (
-      <Suspense fallback={<SimpleBoxHull vessel={vessel} />}>
-        <GltfHull geometry={geometry} meshUri={geometry.hull.mesh_uri} />
+      <Suspense fallback={<SimpleBoxHull vessel={vessel} hidden={hidden} />}>
+        <GltfHull geometry={geometry} meshUri={geometry.hull.mesh_uri} hidden={hidden} />
       </Suspense>
     );
   }
-  return <SimpleBoxHull vessel={vessel} />;
+  return <SimpleBoxHull vessel={vessel} hidden={hidden} />;
 }
 
 function resolveLivery(geometry: VesselGeometry, vessel: Vessel): Livery {
@@ -69,7 +87,7 @@ function resolveLivery(geometry: VesselGeometry, vessel: Vessel): Livery {
  * uncompressed placeholder GLB; wire `useGLTF(meshUri, "/decoders/draco/")` (drei's string-path
  * overload) once a real Draco/KTX2-compressed asset replaces it.
  */
-function GltfHull({ geometry, meshUri }: { geometry: VesselGeometry; meshUri: string }) {
+function GltfHull({ geometry, meshUri, hidden }: { geometry: VesselGeometry; meshUri: string; hidden: boolean }) {
   const showHull = usePlanStore((s) => s.showHull);
   const { scene } = useGLTF(meshUri);
 
@@ -91,11 +109,11 @@ function GltfHull({ geometry, meshUri }: { geometry: VesselGeometry; meshUri: st
   // bbc-sao-paulo-geometry.ts's module comment).
   const position: [number, number, number] = [-geometry.particulars.lbp_m / 2, -geometry.particulars.depth_m, 0];
 
-  if (!showHull) return null;
+  if (!showHull || hidden) return null;
   return <primitive object={scene} position={position} />;
 }
 
-function LoftedHull({ vessel, geometry }: { vessel: Vessel; geometry: VesselGeometry }) {
+function LoftedHull({ vessel, geometry, hidden }: { vessel: Vessel; geometry: VesselGeometry; hidden: boolean }) {
   const showHull = usePlanStore((s) => s.showHull);
   const livery = useMemo(() => resolveLivery(geometry, vessel), [geometry, vessel]);
 
@@ -116,9 +134,9 @@ function LoftedHull({ vessel, geometry }: { vessel: Vessel; geometry: VesselGeom
     return result;
   }, [vessel, geometry]);
 
-  if (!hullGeometry) return <SimpleBoxHull vessel={vessel} />;
+  if (!hullGeometry) return <SimpleBoxHull vessel={vessel} hidden={hidden} />;
 
-  if (!showHull) return null;
+  if (!showHull || hidden) return null;
   return (
     <group>
       <mesh geometry={hullGeometry} material={hullMaterial} raycast={() => null} />
@@ -131,13 +149,13 @@ function LoftedHull({ vessel, geometry }: { vessel: Vessel; geometry: VesselGeom
   );
 }
 
-function SimpleBoxHull({ vessel }: { vessel: Vessel }) {
+function SimpleBoxHull({ vessel, hidden = false }: { vessel: Vessel; hidden?: boolean }) {
   const showHull = usePlanStore((s) => s.showHull);
   const depth = holdDepth(vessel) + 1.5;
   const L = vessel.length_m;
   const B = vessel.beam_m;
 
-  if (!showHull) return null;
+  if (!showHull || hidden) return null;
   return (
     <group>
       {/* hull body (below deck) */}

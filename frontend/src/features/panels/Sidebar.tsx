@@ -3,7 +3,6 @@ import type { StowagePlan, ValidationReport, Vessel } from "@/types/domain";
 import type { StabilityResult } from "@/engine/stability-indicative";
 import { useShallow } from "zustand/react/shallow";
 import { usePlanStore } from "@/store/usePlanStore";
-import { cancelPlacement, commitPlacement } from "@/store/commit-placement";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -13,8 +12,10 @@ import { ContainerInspector } from "./ContainerInspector";
 import { StabilityPanel } from "./StabilityPanel";
 import { LoadingSequencePanel } from "./LoadingSequencePanel";
 import { UnplacedCargoList } from "./UnplacedCargoList";
+import { UnplacedProjectCargoList } from "./UnplacedProjectCargoList";
 import { ProjectCargoPanel } from "./ProjectCargoPanel";
 import { ViewOptionsPanel } from "./ViewOptionsPanel";
+import { useStowageDropRelease } from "./use-stowage-drop-release";
 import { useStowageKeyboardShortcuts } from "./use-stowage-keyboard-shortcuts";
 
 interface Props {
@@ -35,13 +36,16 @@ export function Sidebar({
   vessel, plan, report, attitude, vesselOptions, vesselId, onVesselChange,
   cargoLoaded, onToggleCargo, projectCargoLoaded, onToggleProjectCargo,
 }: Props) {
-  // Undo/redo/Esc in one place (leaves ArrowLeft/Right below alone on purpose — see the hook).
+  // Undo/redo/Esc/R/Delete in one place (leaves ArrowLeft/Right below alone on purpose — see the hook).
   useStowageKeyboardShortcuts();
+  // The ONE commit trigger's window-level release, for a drag of either kind of cargo (Phase 03 moved
+  // it out of this file: the listener needs both doors of the resolver, and this component is at its
+  // own LOC budget).
+  useStowageDropRelease();
   // Shallow-selected subset: Sidebar never reads playbackCount/exaggerate, so this must NOT be
   // a whole-store subscription — that would re-render on every ~60/sec playback tick for nothing.
   const s = usePlanStore(
     useShallow((state) => ({
-      draggingContainerId: state.draggingContainerId,
       bayFilter: state.bayFilter,
       setBayFilter: state.setBayFilter,
       setSelected: state.setSelected,
@@ -66,42 +70,9 @@ export function Sidebar({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [bayIndex, vessel.bays]);
-  // The ONE commit resolver's window-level trigger, mounted only while a DRAG is in flight (a pick
-  // has no pointer held down: it is committed by the click on its target, and cancelling here would
-  // kill it before that click arrives). A window listener rather than an onMouseUp on the list item,
-  // since the button is usually released over the 3D canvas, not back over the sidebar.
-  useEffect(() => {
-    if (!s.draggingContainerId) return;
-    const onMouseUp = (e: MouseEvent) => {
-      // PRIMARY BUTTON ONLY (P1/Low): a right/middle release is not the button that armed the drag.
-      if (e.button !== 0) return;
-      // Only a release OVER THE CANVAS may commit. `hoveredSlot` is a raycast result, and the picker
-      // mesh remounts (R3F drops an unmounted object's hover record without firing `onPointerOut`)
-      // whenever its pickable count changes — so without this gate a release over the sidebar or the
-      // bay plan could place the box on a slot the pointer is not over. Releasing elsewhere cancels,
-      // which is the same outcome the window listener exists to produce for an off-canvas release.
-      const overCanvas = e.target instanceof Element && e.target.closest("canvas") !== null;
-      // `getState()`, not the closure: the listener must not be re-registered per pointer move.
-      const result = overCanvas ? commitPlacement(usePlanStore.getState().hoveredSlot, "scene") : null;
-      // `null` = nothing to commit (no target under the pointer), and the resolver deliberately
-      // leaves the drag open in that case — so the cancel below is what stops a release outside the
-      // canvas from leaving the gesture stuck.
-      if (!result) cancelPlacement();
-      // A real commit's outcome is no longer handled here: the resolver records it in the store and
-      // the chip / ContainerInspector / bay plan read it from there (P1/D5, review M3).
-    };
-    // A button released OUTSIDE the browser window (or a pointer the OS cancels) never reaches the
-    // `mouseup` above, so the gesture would stay armed until the next click or Esc.
-    const onCancel = () => cancelPlacement();
-    window.addEventListener("mouseup", onMouseUp);
-    window.addEventListener("pointercancel", onCancel);
-    window.addEventListener("blur", onCancel);
-    return () => {
-      window.removeEventListener("mouseup", onMouseUp);
-      window.removeEventListener("pointercancel", onCancel);
-      window.removeEventListener("blur", onCancel);
-    };
-  }, [s.draggingContainerId]);
+  // The ONE commit resolver's window-level trigger, mounted only while a DRAG is in flight, now lives
+  // in `use-stowage-drop-release.ts` (Phase 03) so it can serve both kinds of cargo without this file
+  // growing past the 200-LOC rule.
 
   return (
     <aside className="sidebar">
@@ -153,6 +124,8 @@ export function Sidebar({
       <ContainerInspector vessel={vessel} plan={plan} />
 
       <UnplacedCargoList vessel={vessel} plan={plan} />
+
+      <UnplacedProjectCargoList vessel={vessel} plan={plan} />
 
       <section>
         <h2>Checks</h2>

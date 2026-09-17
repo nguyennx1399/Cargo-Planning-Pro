@@ -16,6 +16,7 @@
  *
  * `pad2`/`reason` live here because both predicates format their messages with them.
  */
+import type { StowageArea } from "@/engine/stowage-model";
 import type { HalfSide } from "@/engine/slot-helpers";
 import type { PlacementRule, Reason } from "./reason";
 import { severityOf } from "./reason";
@@ -23,6 +24,18 @@ import { severityOf } from "./reason";
 export const pad2 = (n: number): string => String(n).padStart(2, "0");
 
 export const reason = (rule: PlacementRule, message: string): Reason => ({ rule, message, severity: severityOf(rule) });
+
+/** D4's generic-area caveat — the message string, here with the other per-rule ones. It names the
+ * area and NOT the candidate: this is a fact about the data, so the plan-wide rule's per-message
+ * dedup (`breakbulk-validation-rules.ts`) collapses it to one line per approximate area instead of
+ * one per item resting on it. `AreaPlaceholders` shows the same fact as a badge
+ * (`lib/area-label-text.ts`); keep the two sentences recognisably the same claim. */
+export function approximateAreaReason(area: StowageArea): Reason {
+  return reason(
+    "breakbulk_approximate_area",
+    `${area.label}: approximate area — no GA layout, so its extent is a fraction-of-LOA estimate`,
+  );
+}
 
 /** Occupancy of one 40' cell's 20' halves, in placement order (`PlanIndex.cells`). */
 export interface CellHalves {

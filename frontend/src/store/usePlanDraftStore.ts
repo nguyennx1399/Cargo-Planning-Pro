@@ -24,6 +24,7 @@ import type { BreakbulkPlacement, Placement, Slot, StowagePlan, Vessel } from "@
 import { WEATHER_DECK_AREA_ID, buildStowageModel } from "@/engine/stowage-model";
 import { canPlaceContainer } from "@/engine/placement/can-place-container";
 import { canPlaceBreakbulk, type BreakbulkPose } from "@/engine/placement/can-place-breakbulk";
+import { dependentsLosingSupport, strandedMessage } from "@/engine/placement/support-dependents";
 import { resultOf, severityOf, type PlacementResult, type PlacementRule } from "@/engine/placement/reason";
 
 /** Undo depth. Plain arrays — no history library (zundo deliberately not added). */
@@ -75,7 +76,9 @@ export interface PlanDraftState {
   /** Put a box in a slot, validated first; `move*` is the same operation for an already-placed item. */
   placeContainer: (containerId: string, slot: Slot) => PlacementResult;
   moveContainer: (containerId: string, slot: Slot) => PlacementResult;
-  unplaceContainer: (containerId: string) => void;
+  /** Take a box off the ship. Returns the same `PlacementResult` shape the put actions do, because it
+   * can be REFUSED: a box carrying others may not leave the plan and strand them (`no_floating`). */
+  unplaceContainer: (containerId: string) => PlacementResult;
   /** Same contract for project cargo, with a `{areaId, x_m, z_m, rotation_deg}` pose. */
   placeBreakbulk: (cargoId: string, pose: BreakbulkPose) => PlacementResult;
   moveBreakbulk: (cargoId: string, pose: BreakbulkPose) => PlacementResult;
@@ -107,7 +110,14 @@ export const usePlanDraftStore = create<PlanDraftState>((set, get) => {
     const stripped = withPlacements(plan, plan.placements.filter((p) => p.container_id !== containerId));
     const result = resultOf(canPlaceContainer(buildStowageModel(vessel), stripped, container, slot, vessel).reasons);
     if (!result.ok) return result;
-    apply(plan, withPlacements(stripped, [...stripped.placements, { container_id: containerId, slot }]));
+    const next = withPlacements(stripped, [...stripped.placements, { container_id: containerId, slot }]);
+    // The DESTINATION is fine; the ORIGIN may not be. A move out of the middle of a stack leaves the
+    // boxes above it in the air — the destination check cannot see that, because its subject is the
+    // candidate and theirs is the neighbours it is walking away from. Judged before vs after, so a
+    // floater that predates this edit is never blamed on it.
+    const stranded = dependentsLosingSupport(vessel, plan, next, containerId);
+    if (stranded.length) return fail("no_floating", strandedMessage(containerId, stranded));
+    apply(plan, next);
     return result;
   };
 
@@ -135,11 +145,17 @@ export const usePlanDraftStore = create<PlanDraftState>((set, get) => {
     moveContainer: putContainer,
 
     unplaceContainer: (containerId) => {
-      const { plan } = get();
-      if (!plan) return;
+      const { vessel, plan } = get();
+      if (!vessel || !plan) return fail("no_plan", `${containerId}: no plan is loaded`);
       const placements = plan.placements.filter((p) => p.container_id !== containerId);
-      if (placements.length === plan.placements.length) return; // not placed: no history entry
-      apply(plan, withPlacements(plan, placements));
+      // Not placed: nothing to undo and nothing to strand, so no history entry — and `ok`, because
+      // the caller's intent ("this box should not be on board") already holds.
+      if (placements.length === plan.placements.length) return resultOf([]);
+      const next = withPlacements(plan, placements);
+      const stranded = dependentsLosingSupport(vessel, plan, next, containerId);
+      if (stranded.length) return fail("no_floating", strandedMessage(containerId, stranded));
+      apply(plan, next);
+      return resultOf([]);
     },
 
     placeBreakbulk: putBreakbulk,

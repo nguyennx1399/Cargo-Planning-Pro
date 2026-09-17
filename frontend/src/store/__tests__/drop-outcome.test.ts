@@ -40,7 +40,10 @@ describe("dropOutcome", () => {
     view().setPicked("b");
     const byPick = commitPlacement(slot(2, 2, 82));
 
-    expect(outcome()).toEqual({ slot: slot(2, 2, 82), message: byPick!.reasons[0].message, ok: false, origin: "scene" });
+    expect(outcome()).toEqual({
+      target: { kind: "slot", slot: slot(2, 2, 82) },
+      message: byPick!.reasons[0].message, ok: false, origin: "scene",
+    });
     expect(view().pickedId).toBe("b"); // the WCAG path may click another slot — the reason stays on screen
 
     view().setDraggingContainer("b");
@@ -55,7 +58,10 @@ describe("dropOutcome", () => {
     view().setPicked("cand");
     const warned = commitPlacement(slot(2, 2, 82));
 
-    expect(outcome()).toEqual({ slot: slot(2, 2, 82), message: warned!.reasons[0].message, ok: true, origin: "scene" });
+    expect(outcome()).toEqual({
+      target: { kind: "slot", slot: slot(2, 2, 82) },
+      message: warned!.reasons[0].message, ok: true, origin: "scene",
+    });
     expect(warned?.reasons[0].severity).toBe("warning");
 
     load(makePlan([box("a")], []));

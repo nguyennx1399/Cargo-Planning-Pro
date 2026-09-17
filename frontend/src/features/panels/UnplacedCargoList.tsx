@@ -119,7 +119,7 @@ export function UnplacedCargoList({ vessel, plan }: { vessel: Vessel; plan: Stow
       <p className="muted small">
         {activeContainer
           ? `${validCount} valid position${validCount === 1 ? "" : "s"} for ${activeContainer.id}. Click a highlighted slot in 3D or the bay plan to place it there.`
-          : "Click to pick a container, then click a slot in 3D or the bay plan. Or drag one onto the hull. Esc cancels."}
+          : "Click to pick a container, then click a slot in 3D or the bay plan. Or drag one onto the hull. A box already on board: click to select it, click again to pick it up. Esc cancels."}
       </p>
       <UnplacedListControls
         query={query}
