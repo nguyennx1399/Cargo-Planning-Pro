@@ -10,8 +10,10 @@
 **Status:** Working demo, phases 0–5 in progress. The 3D/2D viewer and the manual stowage editor are
 functional and unit-tested; the solver, stability and backend layers remain stubs. The frontend builds
 and validates its demo plan entirely in the browser — the backend API exists but nothing in the app
-calls it. A drag-drop UX polish pass is implemented in the working tree but **uncommitted and not
-browser-verified** (no DOM test environment; manual click-through steps 22–34 outstanding).
+calls it. A drag-drop UX polish pass was implemented 2026-09-16 and **committed 2026-09-17 as
+`b61234a`**; it has been manually exercised in-browser (that exercise is how the container drag/drop
+defect fixed in that commit was found), but the **full click-through, steps 22–34, is still
+outstanding** (no DOM test environment).
 
 ## Users & Use Cases
 
@@ -25,7 +27,7 @@ browser-verified** (no DOM test environment; manual click-through steps 22–34 
 4. Auto-generate a plan with the solver; review and refine
 5. Export corrected plan as BAPLIE for loading computer approval
 6. Find a box to place in a long unplaced list — search by id, filter by size/type, sort, group, or
-   narrow to the bay in view (P2; uncommitted, not browser-verified)
+   narrow to the bay in view (P2; committed `b61234a`, click-through 22–34 outstanding)
 
 ## Scope & Non-Goals
 
@@ -53,8 +55,8 @@ browser-verified** (no DOM test environment; manual click-through steps 22–34 
 | F5 | BAPLIE import (D.95B, SMDG 2.2/3.1) | 2 | ○ Stub |
 | F6 | Move/swap containers in editor | 2 | ✓ Partial — place/move a container by drag or click-to-pick; **swap not implemented**, project-cargo drop deferred to Phase D |
 | F6a | Drag-drop stowage: valid-slot placeholders, three-state ghost (clean / accepted-with-warnings / refused), undo/redo (cap 100), WCAG 2.5.7 click-to-pick | 2 | ✓ Committed + unit-tested (Phases A–C); the manual browser click-through is the outstanding acceptance step |
-| F6b | Drop-surface UX: nearest-centre slot resolution, one wording layer (`lib/drop-feedback.ts`), at-cursor verdict chip, cursor + "armed" ring, `dropOutcome` surviving the pointer leaving the slot | 2 | ◐ **Implemented + unit-tested; uncommitted, not browser-verified** (P1) |
-| F6c | Bulk retrieval over the Unplaced list: search, size/type filters, sort, grouping, "Fits bay NN", roving arrow-key focus | 2 | ◐ **Implemented + unit-tested; uncommitted, not browser-verified** (P2). "Fits bay NN" is rendering-only (D6) |
+| F6b | Drop-surface UX: nearest-centre slot resolution, one wording layer (`lib/drop-feedback.ts`), at-cursor verdict chip, cursor + "armed" ring, `dropOutcome` surviving the pointer leaving the slot | 2 | ✓ **Committed + unit-tested; browser-exercised** (`b61234a`, 2026-09-17) (P1). Full click-through steps 22–34 outstanding |
+| F6c | Bulk retrieval over the Unplaced list: search, size/type filters, sort, grouping, "Fits bay NN", roving arrow-key focus | 2 | ✓ **Committed + unit-tested; browser-exercised** (`b61234a`, 2026-09-17) (P2). Full click-through steps 22–34 outstanding. "Fits bay NN" is rendering-only (D6) |
 | F7 | Hard constraint validation | 2 | ✓ Partial — 8 container rules (7 hard + soft `overstow`) plus 7 breakbulk rules, run by `engine/validate-plan.ts`; backend `validation/rules.py` carries 5 hard + soft `overstow`. IMDG, stack height, OOG, stability, strength TODO |
 | F8 | Soft objective tracking (overstows, weight, restows) | 2 | ○ Stub |
 | F9 | Greedy auto-stow | 3 | ✓ Partial (sorts by POD/weight; no rule checks yet) |

@@ -521,6 +521,7 @@ Same format as backend: `TODO(phase-N): description`
 **Environment — read this before writing any test:**
 
 - There is **no vitest config file** and **no setup file**. Vitest therefore runs with its default `environment: "node"`.
+- Because no config is loaded, vitest's default `include` glob also sweeps the repo's `.claude/**/*.test.cjs` / `.test.js` (ClaudeKit's own suites). **`npm test` therefore exits non-zero** — `30 failed | 75 passed (105)` *files*, `586 passed (586)` *tests*. Every failure is under `.claude/`; **none under `src/`**. That is a config artefact, not a broken app suite.
 - **jsdom and @testing-library are deliberately not installed.** No DOM, no `render()`, no `fireEvent`, no component tests.
 - Consequently every test must target a **pure function**: engine rules, placement predicates, the stowage model, the list query, the drop-wording functions, the store reducers. If you need to test interactive behaviour, extract the decision into a pure module first — that is exactly why `lib/nearest-slot.ts`, `lib/drop-feedback.ts` and `lib/unplaced-query.ts` are separate files.
 

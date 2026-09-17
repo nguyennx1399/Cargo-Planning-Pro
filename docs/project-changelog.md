@@ -7,12 +7,33 @@ history and are not backfilled here. Phase-level status lives in [project-roadma
 
 Frontend. Plan: [260916-2117-optimize-drag-drop-ux](../plans/260916-2117-optimize-drag-drop-ux/plan.md).
 
-> **Status: implemented 2026-09-16, still UNCOMMITTED as of 2026-09-17, and not browser-verified.**
-> Unit tests, typecheck and build are green, but the repo has no DOM test environment
-> (`environment: 'node'`; jsdom/testing-library deliberately not installed), so no test and no human
-> has driven the pointer. Acceptance steps 22–34 of the
-> [manual click-through](../plans/reports/manual-click-through-260916-phase-c.md) are outstanding.
-> Nothing here has shipped.
+> **Status: implemented 2026-09-16, committed 2026-09-17 as `b61234a`, manually exercised in-browser.**
+> Unit tests, typecheck and build are green, and the drag/drop flow has been driven by hand in a
+> browser — that exercise is how the container drag/drop defect fixed in `b61234a` was found. The repo
+> still has no DOM test environment (`environment: 'node'`; jsdom/testing-library deliberately not
+> installed), so no *test* covers the pointer. The full acceptance click-through — steps 22–34 of the
+> [manual click-through](../plans/reports/manual-click-through-260916-phase-c.md) — is still
+> outstanding. Not an official release.
+
+**Landed as commit `b61234a` — `fix: drag/drop container feature` (2026-09-17 09:22, on `master`)**
+
+- The uncommitted P1/P2 working tree from 2026-09-16 was committed together with the fix found during
+  the in-browser exercise of the drag/drop flow. `frontend/src` now equals `HEAD`; the tree is clean.
+- 12 files added: `lib/drop-feedback.ts`, `lib/nearest-slot.ts`, `lib/unplaced-query.ts`,
+  `features/viewer3d/DropVerdictChip.tsx`, `features/viewer3d/use-drop-cursor.ts`,
+  `features/panels/UnplacedListControls.tsx` and their six test files.
+- Modified: `lib/drop-verdict.ts`, `store/commit-placement.ts`, `store/usePlanStore.ts`,
+  `features/viewer3d/EmptySlotPicker.tsx`, `styles.css`.
+- Test suite on the committed tree: **75 files / 586 tests passing** (2026-09-17), typecheck clean,
+  build exit 0.
+
+> **Reading `npm test`'s exit code:** `npm test` exits non-zero (exit 1) on a clean checkout — vitest
+> reports `30 failed | 75 passed (105)` test *files* while reporting `586 passed (586)` *tests*. All 30
+> failed files are ClaudeKit's own — `.claude/hooks/**`, `.claude/scripts/worktree.test.cjs`, and
+> `.claude/skills/{markdown-novel-viewer,chrome-devtools,sequential-thinking,worktree}/**`;
+> **zero failures under `src/`**. Cause: `frontend/vite.config.ts` has no `test` block, so vitest's
+> default `include` glob sweeps `.claude/**/*.test.cjs` (and `.test.js`) into the run. The app suite
+> (`src/**`) is 75 files / 586 tests green. Config not touched here — documentation only.
 
 **P1 — pointer feedback & precision**
 
@@ -56,9 +77,12 @@ Frontend. Plan: [260916-2117-optimize-drag-drop-ux](../plans/260916-2117-optimiz
   Without this the new search box hijacked them — Esc in the box would have cancelled an armed pick
   and the arrows would have paged the bay filter while typing. Load-bearing.
 
-**Verification (2026-09-17):** `npm test` **75 files / 586 tests passing**; `npm run typecheck` clean;
-`npm run build` succeeds. Machine-checked only — the browser click-through is not run.
-There is no eslint/prettier config and no CI anywhere, so these gates are run by hand.
+**Verification (committed tree, 2026-09-17 09:37):** app suite `npm test` **75 files / 586 tests
+passing** (see the exit-code note above — the non-zero exit comes from ClaudeKit's `.claude/**` tests,
+not from `src/**`); `npm run typecheck` clean; `npm run build` succeeds. Browser: drag/drop and
+pick-and-place were exercised by hand; the single container drag/drop defect found that way is fixed in
+`b61234a`. The full 22–34 click-through is not run. There is no eslint/prettier config and no CI
+anywhere, so these gates are run by hand.
 
 **Not included:** no new npm dependency (Tailwind 4 utilities + existing shadcn only); no DOM test
 tooling (D7); swap, multi-select, keyboard nudging of a placed box and magnet snapping remain

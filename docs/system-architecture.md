@@ -90,13 +90,13 @@
 
 | Area | Size | Tests | Notes |
 |---|---|---|---|
-| Frontend (`frontend/src`) | ~17.4k LOC TS/TSX (≈190 files; 17,694 incl. `styles.css`) | **75 test files, 586 tests, all passing** (~5 s warm) | Vitest ^3.2.7; **no vitest config file exists**, so `environment: "node"` is the default |
+| Frontend (`frontend/src`) | ~17.4k LOC TS/TSX (≈190 files; 17,694 incl. `styles.css`) | **75 test files, 586 tests, all passing** (~5 s warm) | Vitest ^3.2.7; **no vitest config file exists**, so `environment: "node"` is the default — the default `include` glob also sweeps `.claude/**`, so a bare `npm test` exits non-zero on 30 ClaudeKit test files while `src/**` stays 75/586 green (see [codebase-summary.md](./codebase-summary.md)) |
 | Backend (`backend/app`) | 575 LOC Python | **0 tests** | `backend/tests/` does not exist, despite `pytest` + `httpx` in `requirements.txt` |
 | CI · lint · format | — | **none** | no `.github/`, no ESLint/Prettier config, no git hooks anywhere in the repo |
 
-**No DOM test environment exists.** Vitest runs with `environment: "node"`, and jsdom / testing-library are deliberately not installed. Unit tests cover pure logic only; **no interactive behaviour (drag, hover, drop, keyboard) has ever been exercised by a test or by a human.**
+**No DOM test environment exists.** Vitest runs with `environment: "node"`, and jsdom / testing-library are deliberately not installed. Unit tests cover pure logic only; **no interactive behaviour (drag, hover, drop, keyboard) is covered by a test** — human coverage is the manual click-through, and only part of it has been run.
 
-> **Drag-and-drop / pick-and-place UX pass (P1 + P2, plan `plans/260916-2117-optimize-drag-drop-ux/`):** implemented in the working tree, unit-tested, typecheck- and build-green — but **uncommitted and not browser-verified**. Manual click-through steps 22–34 in `plans/reports/manual-click-through-260916-phase-c.md` are outstanding. Do not read anything in this document as "shipped" or "verified" for that work.
+> **Drag-and-drop / pick-and-place UX pass (P1 + P2, plan `plans/260916-2117-optimize-drag-drop-ux/`):** implemented 2026-09-16, committed 2026-09-17 as `b61234a`, unit-tested, typecheck- and build-green, and **manually exercised in-browser** — that exercise is how the container drag/drop defect fixed in `b61234a` was found. The full manual click-through, steps 22–34 in `plans/reports/manual-click-through-260916-phase-c.md`, is still outstanding. Read it as landed, not as released.
 
 ## REST API Reference
 
@@ -539,7 +539,7 @@ Gesture state (`hoveredSlot`, `draggingContainerId`, `pickedId`, `dropOutcome`) 
 
 > Esc first returns early when the event target is an `INPUT`/`TEXTAREA`. That guard is load-bearing: the Unplaced list's search box is the app's first text field, and without it pressing Esc while typing would cancel an armed pick.
 
-### End-to-end drop flow (P1/P2 — implemented, unit-tested, **uncommitted, not browser-verified**)
+### End-to-end drop flow (P1/P2 — implemented, unit-tested, **committed `b61234a`, browser-exercised**)
 
 Two triggers, one path. The whole chain runs in the browser; nothing here touches the network.
 

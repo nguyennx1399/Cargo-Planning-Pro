@@ -13,7 +13,7 @@ Principle: **validator before optimizer** — every plan (human or solver) passe
 |---|---|---|---|---|
 | 0 | Domain & data: reference vessel, real BAPLIE files, freeze data model v1 | 1–2 wk | Not started (synthetic sample only) | ~10% |
 | 1 | 3D + 2D viewer | 2–4 wk | In progress | ~70% |
-| 2 | Manual editor + validation | 3–4 wk | In progress — editor shipped (Phases A–C), UX polish P1/P2 implemented but uncommitted | ~60% |
+| 2 | Manual editor + validation | 3–4 wk | In progress — editor shipped (Phases A–C), UX polish P1/P2 committed (`b61234a`) | ~60% |
 | 3 | Auto-stow v1: greedy heuristic | 2–3 wk | Placeholder solver | ~15% |
 | 4 | Optimization (CP-SAT) + stability | 4–8 wk | Stubs only | ~0% |
 | 5 | AI layer | ongoing | Not started | 0% |
@@ -21,8 +21,9 @@ Principle: **validator before optimizer** — every plan (human or solver) passe
 Percentages are rough estimates from code inspection, mirrored in [README](../README.md) and
 [project-overview-pdr.md](./project-overview-pdr.md). Phase 2 credits the committed editor (place/move by
 drag or click-to-pick, undo/redo, live validation) plus the P1/P2 pointer-feedback and bulk-retrieval
-polish, but still counts BAPLIE IO, the remaining rules (IMDG, stack height, OOG), swap and
-persistence as open.
+polish (committed 2026-09-17 as `b61234a`), but still counts BAPLIE IO, the remaining rules (IMDG, stack
+height, OOG), swap, persistence and the unfinished browser click-through as open. The figure stays ~60%
+— landing the commit closed no open item on that list.
 
 ## Phase 0 — Domain & Data
 
@@ -61,7 +62,7 @@ persistence as open.
 - [x] Place/move a container by drag from the Unplaced list, or by click-to-pick then click a target; every commit is validated before the mutation and violations re-run on the edit
 - [ ] Swap two containers (not implemented)
 - [x] Undo/redo (client-side, cap 100 — `usePlanDraftStore`)
-- [x] Find a box in the Unplaced list at scale — search, size/type filters, sort, grouping, "Fits bay NN" and roving arrow-key focus (P2; uncommitted, see below)
+- [x] Find a box in the Unplaced list at scale — search, size/type filters, sort, grouping, "Fits bay NN" and roving arrow-key focus (P2, committed `b61234a`; see below)
 - [ ] PostgreSQL + plan versions
 
 ### Drag-drop stowage editor — Phases A–C (2026-09-16)
@@ -71,19 +72,21 @@ Spec: [confluence-260916 drag-drop stowage placeholders](../plans/reports/conflu
 - [x] **A — StowageModel:** `engine/stowage-model/` (areas, slots incl. 20' odd half-bays, occupancy); `breakbulk-deck-area.ts` becomes a thin shim
 - [x] **B — Placement checks + editable plan:** `engine/placement/` predicates; `usePlanDraftStore` (validate-then-mutate, undo/redo); App loads the demo plan into the draft store
 - [x] **C — Container placeholders + drop:** `validSlotsFor`, 3D placeholders, three-state ghost tint, one commit resolver for drag and click-to-pick, bay-plan click-to-place, undo/redo/Esc keys
-- [ ] **C (acceptance):** the manual browser click-through — [script](../plans/reports/manual-click-through-260916-phase-c.md). Engine/store behaviour is unit-tested; the browser interactions are not machine-verified (no DOM test environment)
+- [ ] **C (acceptance):** the manual browser click-through — [script](../plans/reports/manual-click-through-260916-phase-c.md). Engine/store behaviour is unit-tested; the browser interactions are not machine-verified (no DOM test environment). The drag/drop flow has since been hand-exercised (that is how the `b61234a` defect was found), but the full script, steps 22–34, is unrun
 - [ ] **D — Project cargo placeholders + drop** (deferred): `freeRegionsFor`, area drop plane, ghost breakbulk preview, 0/90° rotation, deck-vs-hold selection
 - [ ] **E — Hardening & realism** (deferred): hatch-opening check, adjustable tweendeck pontoon levels, multi-select/nudging, magnet snapping, Playwright, **and deleting the `breakbulk-deck-area.ts` shim**
 
-### Drag-drop UX polish — Phases P1–P2 (2026-09-16, **uncommitted, not browser-verified**)
+### Drag-drop UX polish — Phases P1–P2 (2026-09-16, committed 2026-09-17 as `b61234a`)
 
 Plan: [260916-2117-optimize-drag-drop-ux](../plans/260916-2117-optimize-drag-drop-ux/plan.md) · Acceptance: steps 22–34 of the [same click-through script](../plans/reports/manual-click-through-260916-phase-c.md)
 
-Status: **implemented in the working tree 2026-09-16, unit-tested** (75 files / 586 tests green,
-typecheck clean, build exit 0), **uncommitted**. The repo has no DOM test environment
-(`environment: 'node'`; jsdom and testing-library are deliberately not installed), so no test and no
-human has yet driven the actual pointer. Open: the browser click-through and the docs sync. Do not
-read either phase as shipped, verified or complete.
+Status: **implemented 2026-09-16, unit-tested and committed 2026-09-17** (`b61234a`
+`fix: drag/drop container feature`; 75 files / 586 tests green, typecheck clean, build exit 0), and
+**manually exercised in-browser** — that exercise is how the container drag/drop defect fixed in
+`b61234a` was found. The repo still has no DOM test environment (`environment: 'node'`; jsdom and
+testing-library are deliberately not installed), so no *test* covers the pointer. Open: the full
+browser click-through (steps 22–34) and the docs sync. Landed, not released — do not read either
+phase as complete.
 
 - [x] **P1 — pointer feedback & precision:** cursor-driven slot resolution by nearest slot **centre** to the ray's tier-plane crossing (`lib/nearest-slot.ts`) — closes the recorded H2 "camera side decides" defect, the 0.402 m BBC bay-boundary hazard and the 0.076 m sibling-half dead zone; one wording layer (`lib/drop-feedback.ts`) behind every surface; at-cursor verdict chip (`DropVerdictChip.tsx`, `aria-hidden`); cursor classes + 2 px "armed" ring (`use-drop-cursor.ts`); `dropOutcome` in `usePlanStore` (D5) replacing `Sidebar`'s local notice, written only by `commit-placement.ts`; release hardening (`e.button` guard, `pointercancel`/`blur` cancel)
 - [x] **P2 — bulk retrieval over the Unplaced list:** pure `lib/unplaced-query.ts` + presentation-only `UnplacedListControls.tsx`; search, size/type filters, sort (cargo order / POD rotation / weight heavy-first / id), grouping (none / POD / type / size, collapsible with per-group counts), ArrowUp/Down/Home/End roving focus, "Fits bay NN" toggle; list height 140 px → 320 px; header becomes `Unplaced (n of N)` when filtered, "No container matches." + Clear filters when empty
@@ -122,7 +125,7 @@ rejected.
 - [ ] Tests, backend: **there is no `backend/tests/` directory** and pytest collects nothing — despite
       `pytest` and `httpx` sitting in `backend/requirements.txt`. One test per rule is still TODO.
       (An earlier revision of this file claimed `test_api`/`test_slot` existed; they do not.)
-- [x] Tests, frontend: 75 files / 586 tests green (`cd frontend && npm test`), pure-unit only
+- [x] Tests, frontend: 75 files / 586 tests green (`cd frontend && npm test`), pure-unit only. Note the command **exits non-zero** — the default vitest `include` also sweeps ClaudeKit's `.claude/**` tests (30 failed files, 0 under `src/**`); see [codebase-summary.md](./codebase-summary.md)
 - [ ] DOM/interaction tests — no jsdom, no testing-library; every pointer interaction is human-observed
 - [ ] BAPLIE golden-file round-trip (phase 2/3)
 - [ ] CI of any kind (`.github/` does not exist; typecheck/build/test are run by hand)
@@ -140,9 +143,11 @@ rejected.
    `data/build-demo-plan.ts` and validated by `engine/validate-plan.ts`. The Vite `/api` proxy and the
    mounted React Query provider are configured but idle. The backend's 5 endpoints are real but
    reachable only by hand (curl, `/docs`).
-7. **No browser-verified interaction anywhere.** The repo has no DOM test environment, so every
-   pointer/drag/keyboard behaviour in the editor rests on unit tests plus the manual click-through
-   script — steps 22–34 of which have not been run.
+7. **No machine-verified interaction anywhere.** The repo has no DOM test environment, so every
+   pointer/drag/keyboard behaviour in the editor rests on unit tests plus manual browser exercise.
+   Drag/drop and pick-and-place have been driven by hand in a browser (that is how the `b61234a`
+   defect was found), but the acceptance click-through — steps 22–34 — is still unrun, so nothing
+   beyond that ad-hoc pass has human coverage.
 
 ## Unresolved Questions
 

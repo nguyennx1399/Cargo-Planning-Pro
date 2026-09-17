@@ -92,6 +92,11 @@ cd frontend && npm run typecheck # tsc --noEmit
 cd frontend && npm run build     # typecheck + vite build -> frontend/dist
 ```
 
+> **`npm test` exits non-zero (exit 1) even when the app is fine.** Vitest's default `include` also
+> picks up ClaudeKit's `.claude/**/*.test.cjs` suites (`30 failed | 75 passed (105)` files) because
+> `frontend/vite.config.ts` has no `test` block. All 30 failures are under `.claude/`; the app suite
+> under `src/**` is 75 files / 586 tests green. Do not treat that exit code as a build failure.
+
 There is **no backend test suite**. `pytest` and `httpx` are declared in `backend/requirements.txt`,
 but `backend/tests/` does not exist — `cd backend && pytest` collects nothing.
 

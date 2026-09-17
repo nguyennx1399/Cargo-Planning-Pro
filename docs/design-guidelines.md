@@ -187,8 +187,9 @@ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
    - Keyboard: ArrowUp/Down walk the *rendered* rows, Home/End jump to the ends, and a group header
      participates (ArrowDown enters its first row). The list window is 320 px tall (was 140 px) —
      MV Demo Horizon holds 400 unplaced rows, and roughly twice as many chips are visible at once.
-   - **Status:** implemented 2026-09-16, unit-tested, **uncommitted and not browser-verified** (no DOM
-     test environment). Acceptance steps 29–34 of the manual click-through are outstanding.
+   - **Status:** implemented 2026-09-16, unit-tested, **committed 2026-09-17 as `b61234a` and manually
+     exercised in-browser**. The full click-through — steps 22–34 of the manual acceptance — is still
+     outstanding (no DOM test environment).
 
 10. **Checks**
    - KPI row: Placed / Not placed / Overstows / Rule errors
@@ -277,7 +278,7 @@ Footer: "Planning aid only. Verify stability on the approved loading computer."
 - Smooth transition (0.2s) to avoid jank
 - Deselect by clicking empty space
 
-**Drop feedback (committed 2026-09-16; P1 additions uncommitted and not browser-verified):**
+**Drop feedback (Phases A–C committed 2026-09-16; P1 additions committed 2026-09-17 as `b61234a`, browser-exercised):**
 - Translucent placeholders on every valid slot while a container is in hand (one InstancedMesh, `raycast={() => null}`)
 - Ghost follows the cursor, tinted green (clean) / amber (accepted, recorded) / red (refused)
 - Tint and reason text come from a single verdict object, so they can never disagree

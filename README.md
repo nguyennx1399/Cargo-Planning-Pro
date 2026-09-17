@@ -143,11 +143,13 @@ cd frontend && npm run typecheck
 Phase percentages match [docs/project-roadmap.md](./docs/project-roadmap.md), which is the living
 status source.
 
-**Working tree note (2026-09-17):** a drag-drop UX polish pass (plan
-`plans/260916-2117-optimize-drag-drop-ux/`) is implemented and unit-tested but **uncommitted and not
-browser-verified** — the repo has no DOM test environment, so the interactive behaviour is covered
-only by the manual click-through script (`plans/reports/manual-click-through-260916-phase-c.md`,
-steps 22–34, outstanding). It is credited in the phase-2 figure above but is not "shipped".
+**Drag-drop UX note (2026-09-17):** the drag-drop UX polish pass (plan
+`plans/260916-2117-optimize-drag-drop-ux/`) is implemented, unit-tested and **committed** as `b61234a`
+(`fix: drag/drop container feature`), and has been **manually exercised in-browser** — that exercise is
+how the container drag/drop defect fixed in that commit was found. The repo has no DOM test
+environment, so no *test* covers the interactive behaviour; the full manual click-through script
+(`plans/reports/manual-click-through-260916-phase-c.md`, steps 22–34) is still outstanding. It is
+credited in the phase-2 figure above but is not "released".
 
 ## Key Design Principles
 
@@ -160,7 +162,7 @@ steps 22–34, outstanding). It is credited in the phase-2 figure above but is n
 ## Known Gaps & TODOs
 
 - **Frontend/backend not wired:** the demo plan is built and validated client-side; `api/client.ts` has no importers and the `/api` proxy is unused
-- **Drag-drop editor not browser-verified:** implemented + unit-tested in the working tree, uncommitted; manual click-through steps 22–34 unrun (no DOM test environment)
+- **Drag-drop editor not test-covered:** implemented + unit-tested and committed (`b61234a`); interactive behaviour is human-exercised only, and the acceptance click-through (steps 22–34) is unrun (no DOM test environment). A bare `npm test` also exits non-zero because vitest's default `include` sweeps ClaudeKit's `.claude/**` tests — the app suite (`src/**`) is 75 files / 586 tests green
 - **BAPLIE import/export:** Not yet implemented (phase 2)
 - **Solver validation:** `/api/stowage/solve` returns solver output without running its own `validate()` (fix in phase 3)
 - **Stack height rules:** Visibility line + OOG clearance TBD (phase 2)

@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Project cargo — area drag prototype (BBC SAO PAULO)</title>
+<style>
+  :root {
+    --bg: #dce3e9; --panel: #ffffffdd; --ink: #1b2229; --muted: #5b6875;
+    --ok: #2e9e5b; --warn: #d79a17; --err: #cf3b3b; --line: #b9c4cd;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); }
+  #app { position: fixed; inset: 0; background: var(--bg); }
+  canvas { display: block; }
+  .panel {
+    position: absolute; top: 12px; left: 12px; width: 300px; max-height: calc(100% - 24px); overflow: auto;
+    background: var(--panel); backdrop-filter: blur(6px); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; box-shadow: 0 6px 24px #0b1a2a1f;
+  }
+  .panel h1 { font-size: 14px; margin: 0 0 2px; }
+  .panel h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin: 14px 0 6px; }
+  .muted { color: var(--muted); }
+  .small { font-size: 11.5px; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; }
+  button {
+    font: inherit; padding: 4px 9px; border-radius: 7px; border: 1px solid var(--line);
+    background: #fff; color: var(--ink); cursor: pointer;
+  }
+  button:hover { border-color: #8fa0ae; }
+  button[aria-pressed="true"] { background: #1b2229; color: #fff; border-color: #1b2229; }
+  label.chk { display: flex; align-items: center; gap: 6px; margin: 3px 0; cursor: pointer; }
+  kbd { font: 11px ui-monospace, monospace; background: #eef2f5; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; }
+  .verdict {
+    position: absolute; padding: 5px 9px; border-radius: 7px; color: #fff; font-weight: 600; font-size: 12px;
+    pointer-events: none; transform: translate(14px, 14px); max-width: 320px; box-shadow: 0 3px 12px #0b1a2a33;
+  }
+  .verdict.valid { background: var(--ok); } .verdict.warning { background: var(--warn); } .verdict.invalid { background: var(--err); }
+  .legend i { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+  td { padding: 1px 0; } td:last-child { text-align: right; color: var(--muted); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="panel">
+  <h1>Project cargo — area drag</h1>
+  <div class="muted small">BBC SAO PAULO · real stowage areas from <code>bbc-sao-paulo.stowage.json</code>. Prototype of Phase D: <b>drop anywhere inside an area</b>, live-checked.</div>
+
+  <h2>Item in hand</h2>
+  <div class="row" id="items"></div>
+
+  <h2>Areas shown</h2>
+  <label class="chk"><input type="checkbox" id="onDeck" checked> On deck (hatch covers)</label>
+  <label class="chk"><input type="checkbox" id="underDeck"> Under deck (holds)</label>
+  <label class="chk"><input type="checkbox" id="hull" checked> Hull</label>
+  <label class="chk"><input type="checkbox" id="clamp" checked> Clamp ghost inside area</label>
+
+  <h2>Gesture</h2>
+  <div class="small">Move pointer over a green area · <kbd>click</kbd> drop · <kbd>R</kbd> rotate 0°/90° · <kbd>Esc</kbd> cancel · click a placed item to pick it up · <kbd>Del</kbd> unplace.</div>
+
+  <h2>Placement</h2>
+  <table id="readout"></table>
+
+  <h2>Legend</h2>
+  <div class="small legend">
+    <div><i style="background:#2e9e5b55;border:1px solid #2e9e5b"></i>usable area (rect)</div>
+    <div><i style="background:#8a97a3"></i>keep-out (crane, accommodation)</div>
+    <div><i style="background:#39424b"></i>occupied footprint</div>
+    <div><i style="background:#cf3b3b"></i>refused drop · <i style="background:#d79a17"></i>accepted + recorded</div>
+  </div>
+</div>
+<div id="verdict" class="verdict" hidden></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+/* ───────────────────────── vessel + areas (dumped from buildStowageModel) ───────────────────────── */
+const VESSEL = { id: "bbc-sao-paulo", lengthM: 149.95, beamM: 23.2 };
+const AREAS = [
+  { id: "weather_deck", label: "weather deck", level: "weather_deck", onDeck: true, source: "declared",
+    rect: { xMin: 9.05, xMax: 122.9, zMin: -9.85, zMax: 9.85 }, surfaceY: 4.8, maxHeight: Infinity, loadRating: 4,
+    keepOuts: [
+      { id: "crane_01_foundation", label: "crane 1 foundation", xMin: 39.2, xMax: 47.9, zMin: -11.6, zMax: -10 },
+      { id: "crane_01_pedestal",  label: "crane 1 pedestal",  xMin: 41.55, xMax: 45.55, zMin: -11, zMax: -7 },
+      { id: "crane_02_foundation", label: "crane 2 foundation", xMin: 83.95, xMax: 92.65, zMin: -11.6, zMax: -10 },
+      { id: "crane_02_pedestal",  label: "crane 2 pedestal",  xMin: 86.3, xMax: 90.3, zMin: -11, zMax: -7 },
+      { id: "accommodation", label: "forward accommodation", xMin: 128.6, xMax: 150.65, zMin: -11.6, zMax: 11.6 },
+      { id: "aft_deck_structure", label: "aft deck structure", xMin: 0.95, xMax: 7.8, zMin: -4.15, zMax: 4.15 },
+    ] },
+  { id: "tank_top_hold2", label: "Hold 2 tank top", level: "tank_top", onDeck: false, source: "declared",
+    rect: { xMin: 37.6, xMax: 115.9, zMin: -9.1, zMax: 9.1 }, surfaceY: -10.7, maxHeight: 14.6, loadRating: 20, keepOuts: [] },
+  { id: "main_deck_aft_hold2", label: "Hold 2 aft section (main-deck level)", level: "tweendeck", onDeck: false, source: "declared",
+    rect: { xMin: 11.5, xMax: 31.1, zMin: -9.1, zMax: 9.1 }, surfaceY: 0, maxHeight: 3.9, loadRating: 2.5, keepOuts: [] },
+  { id: "tank_top_hold1", label: "Hold 1 tank top", level: "tank_top", onDeck: false, source: "declared",
+    rect: { xMin: 115.95, xMax: 123.65, zMin: -4.2, zMax: 4.2 }, surfaceY: -5.5, maxHeight: 10.4, loadRating: 10, keepOuts: [] },
+];
+const areaById = new Map(AREAS.map((a) => [a.id, a]));
+
+/* Catalog rows (breakbulk-cargo-catalog.ts) — what the planner drags. */
+const CATALOG = [
+  { id: "BLADE-62", label: "Blade 62 m", length_m: 62, width_m: 4.5, height_m: 3.5, weight_t: 22, color: "#D8DEE4" },
+  { id: "NACELLE",  label: "Nacelle",    length_m: 12, width_m: 4,   height_m: 4.5, weight_t: 95, color: "#8A97A3" },
+  { id: "TOWER-24", label: "Tower 24 m", length_m: 24, width_m: 5.5, height_m: 5.5, weight_t: 110, color: "#B7C0C8" },
+  { id: "YACHT-30", label: "Yacht 30 m", length_m: 30, width_m: 6.5, height_m: 7,  weight_t: 95, color: "#F2F4F6" },
+];
+
+/* Already-placed items (the "occupied" dark rects, and themselves draggable). */
+const placements = [
+  { cargo: CATALOG[0], areaId: "weather_deck", x_m: 70, z_m: 6.5, rotation_deg: 0 },
+  { cargo: CATALOG[1], areaId: "weather_deck", x_m: 26, z_m: -5, rotation_deg: 0 },
+  { cargo: CATALOG[2], areaId: "tank_top_hold2", x_m: 60, z_m: -4, rotation_deg: 0 },
+];
+
+/* ───────────────────────── pure placement rules (mirrors engine/placement/can-place-breakbulk.ts) ───────────────────────── */
+const SNAP_M = 0.5;
+const BAND_M = 20;
+const snap = (v, step = SNAP_M) => Math.round(v / step) * step;
+const extentOf = (item, rot) => (rot === 90 ? [item.width_m, item.length_m] : [item.length_m, item.width_m]);
+
+function footprint(item, pose) {
+  const [ex, ez] = extentOf(item, pose.rotation_deg);
+  return { xMin: pose.x_m - ex / 2, xMax: pose.x_m + ex / 2, zMin: pose.z_m - ez / 2, zMax: pose.z_m + ez / 2 };
+}
+const overlaps = (a, b) => a.xMin < b.xMax && a.xMax > b.xMin && a.zMin < b.zMax && a.zMax > b.zMin;
+
+/** The candidate's verdict: "invalid" refuses the drop, "warning" accepts and records it (D1). */
+function checkPose(item, pose, skipCargoId) {
+  const area = areaById.get(pose.areaId);
+  const rect = footprint(item, pose);
+  const reasons = [];
+  const push = (sev, text) => reasons.push({ sev, text });
+
+  if (rect.xMin < area.rect.xMin - 1e-6 || rect.xMax > area.rect.xMax + 1e-6 ||
+      rect.zMin < area.rect.zMin - 1e-6 || rect.zMax > area.rect.zMax + 1e-6) {
+    push("invalid", `footprint extends outside ${area.label}`);
+  }
+  const ko = area.keepOuts.find((k) => overlaps(rect, k));
+  if (ko) push("invalid", `footprint overlaps ${ko.label}`);
+  if (Number.isFinite(area.maxHeight) && item.height_m > area.maxHeight + 1e-6) {
+    push("invalid", `${item.height_m} m tall exceeds the ${area.maxHeight} m clear height in ${area.label}`);
+  }
+  if (area.loadRating !== undefined) {
+    const pressure = item.weight_t / (item.length_m * item.width_m);
+    if (pressure > area.loadRating + 1e-9) push("invalid", `${pressure.toFixed(2)} t/m² exceeds the ${area.loadRating} t/m² rating of ${area.label}`);
+  }
+  for (const p of placements) {
+    if (p.cargo.id === skipCargoId) continue;
+    if (p.areaId !== pose.areaId) continue;
+    if (overlaps(rect, footprint(p.cargo, p))) push("invalid", `overlaps ${p.cargo.label}`);
+  }
+  // 20 m longitudinal band weight — an overridable limit, so it warns rather than refuses.
+  let start = area.rect.xMin, band = null;
+  while (start < area.rect.xMax) { const end = start + BAND_M; if (pose.x_m >= start && pose.x_m < end) { band = { start, end }; break; } start = end; }
+  if (band) {
+    const limitT = area.loadRating ? Math.round(area.loadRating * BAND_M * (area.rect.zMax - area.rect.zMin)) : 200;
+    let w = item.weight_t;
+    for (const p of placements) {
+      if (p.cargo.id === skipCargoId || p.areaId !== pose.areaId) continue;
+      if (p.x_m >= band.start && p.x_m < band.end) w += p.cargo.weight_t;
+    }
+    if (w > limitT) push("warning", `${area.label} band ${band.start.toFixed(0)}–${band.end.toFixed(0)} m: ${w.toFixed(0)} t exceeds the ${limitT} t limit`);
+  }
+  if (area.source === "generic") push("warning", "approximate area (no GA layout declared)");
+
+  const blocking = reasons.find((r) => r.sev === "invalid");
+  return {
+    verdict: blocking ? "invalid" : reasons.length ? "warning" : "valid",
+    message: blocking ? blocking.text : reasons[0]?.text ?? "clear",
+  };
+}
+
+/** Keep the footprint inside the area rect (the "drop anywhere INSIDE" feel). Never relaxes a rule.
+ *
+ * ORDER MATTERS, and getting it wrong is silent: clamp-then-snap rounds the clamped centre back OUT
+ * of the area (a 6.5 m wide item in a z ±9.1 m hold clamps to -5.85 m, which snaps to -6.0 m and is
+ * 0.15 m over the edge again — observed in this prototype). So the grid bounds are rounded INWARD
+ * first, and the snapped centre is clamped into them. */
+function clampPose(item, pose) {
+  const area = areaById.get(pose.areaId);
+  const [ex, ez] = extentOf(item, pose.rotation_deg);
+  // An item bigger than the area would invert the bounds — leave it under the pointer and let the
+  // check refuse it with the real reason ("extends outside …") rather than inventing a position.
+  if (area.rect.xMax - area.rect.xMin < ex || area.rect.zMax - area.rect.zMin < ez) return pose;
+  const lo = (min, half) => Math.ceil((min + half) / SNAP_M - 1e-9) * SNAP_M;
+  const hi = (max, half) => Math.floor((max - half) / SNAP_M + 1e-9) * SNAP_M;
+  const clamp = (v, min, max) => Math.min(Math.max(v, min), max);
+  return {
+    ...pose,
+    x_m: clamp(snap(pose.x_m), lo(area.rect.xMin, ex / 2), hi(area.rect.xMax, ex / 2)),
+    z_m: clamp(snap(pose.z_m), lo(area.rect.zMin, ez / 2), hi(area.rect.zMax, ez / 2)),
+  };
+}
+
+/* ───────────────────────── scene ───────────────────────── */
+const app = document.getElementById("app");
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color("#dce3e9");
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.5, 2000);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0, 0);
+controls.maxPolarAngle = Math.PI * 0.49;
+
+/** Frame the whole vessel for the CURRENT viewport — the pane can be tall and narrow, where a fixed
+ * camera position shows one hatch cover and nothing else, and a bounding-SPHERE fit wastes a third
+ * of the frame on a hull that is 6× longer than it is wide.
+ *
+ * So: project the vessel's 8 box corners for a trial distance, measure how far they overflow the
+ * frame, and scale the distance by that overflow. Three passes converge (perspective makes it
+ * slightly non-linear). Then PAN camera and target together, so the ship sits clear of the panel
+ * instead of underneath it — panning both is what keeps the orbit centre on the ship. */
+const VIEW_DIR = new THREE.Vector3(0.62, 0.5, 0.6).normalize();
+
+function vesselCorners() {
+  const halfL = VESSEL.lengthM / 2, halfB = VESSEL.beamM / 2;
+  const out = [];
+  for (const x of [-halfL, halfL]) for (const y of [-11, 12]) for (const z of [-halfB, halfB]) out.push(new THREE.Vector3(x, y, z));
+  return out;
+}
+
+function frameVessel() {
+  const corners = vesselCorners();
+  // The panel covers the left edge on a narrow pane; keep roughly that much of the frame clear.
+  const panelFrac = innerWidth < 1100 ? Math.min(0.42, 330 / innerWidth) : 0;
+  const usableX = 0.94 - panelFrac * 0.5;
+  let dist = VESSEL.lengthM * 1.6;
+
+  const place = () => {
+    camera.position.copy(VIEW_DIR).multiplyScalar(dist).add(controls.target);
+    camera.lookAt(controls.target);
+    camera.updateMatrixWorld();
+    camera.updateProjectionMatrix();
+  };
+
+  // Two interleaved corrections: distance (does it FIT) and pan (is it CENTRED). A long hull seen
+  // three-quarter on projects as a diagonal, so its projected centroid is nowhere near the origin —
+  // fitting alone leaves the ship jammed into one corner with dead space opposite.
+  for (let pass = 0; pass < 4; pass++) {
+    place();
+    const ndcs = corners.map((c) => c.clone().project(camera));
+    const mid = { x: (Math.min(...ndcs.map((p) => p.x)) + Math.max(...ndcs.map((p) => p.x))) / 2,
+                  y: (Math.min(...ndcs.map((p) => p.y)) + Math.max(...ndcs.map((p) => p.y))) / 2 };
+    // Where the ship's centre SHOULD sit: pushed right of the panel, vertically centred.
+    const wantX = panelFrac * 0.5;
+    const halfH = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * dist;
+    const halfW = halfH * camera.aspect;
+    const right = new THREE.Vector3().crossVectors(camera.getWorldDirection(new THREE.Vector3()), camera.up).normalize();
+    const up = new THREE.Vector3().crossVectors(right, camera.getWorldDirection(new THREE.Vector3())).normalize();
+    const pan = right.multiplyScalar((mid.x - wantX) * halfW).add(up.multiplyScalar(mid.y * halfH));
+    camera.position.add(pan);
+    controls.target.add(pan);
+    place();
+
+    const after = corners.map((c) => c.clone().project(camera));
+    let overflow = 0;
+    for (const p of after) overflow = Math.max(overflow, Math.abs(p.x - wantX) / usableX, Math.abs(p.y) / 0.9);
+    dist *= overflow;
+  }
+  place();
+  controls.update();
+}
+
+/* Light: a soft sky/sea hemisphere for ambient fill, plus one sun from high port-forward so the
+   deck reads bright and cargo boxes keep a shaded side to sit on. */
+scene.add(new THREE.HemisphereLight("#ffffff", "#8a9aa8", 1.0));
+const sun = new THREE.DirectionalLight("#ffffff", 1.15);
+sun.position.set(60, 120, 40);
+scene.add(sun);
+
+const sceneX = (x_m) => x_m - VESSEL.lengthM / 2;   // engine/stowage-model/coords.ts
+const ship = new THREE.Group();
+scene.add(ship);
+
+/* Hull: plan-view outline with a tapered bow, extruded down. Silhouette only — the areas carry the
+   information, so the hull stays a quiet, translucent container. */
+function buildHull() {
+  const L = VESSEL.lengthM, B = VESSEL.beamM, d = 12.6;
+  const s = new THREE.Shape();
+  const hb = B / 2;
+  s.moveTo(sceneX(0), -hb * 0.72);
+  s.lineTo(sceneX(0), hb * 0.72);
+  s.lineTo(sceneX(L * 0.06), hb);
+  s.lineTo(sceneX(L * 0.82), hb);
+  s.quadraticCurveTo(sceneX(L * 0.95), hb * 0.75, sceneX(L), 0);
+  s.quadraticCurveTo(sceneX(L * 0.95), -hb * 0.75, sceneX(L * 0.82), -hb);
+  s.lineTo(sceneX(L * 0.06), -hb);
+  s.closePath();
+  const geo = new THREE.ExtrudeGeometry(s, { depth: d, bevelEnabled: false });
+  geo.rotateX(Math.PI / 2);          // extrude along -y
+  geo.translate(0, 4.8, 0);          // main deck at the weather-deck surface height
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+    color: "#5d7183", transparent: true, opacity: 0.13, roughness: 0.9, side: THREE.DoubleSide, depthWrite: false,
+  }));
+  mesh.renderOrder = -1;
+  return mesh;
+}
+const hullMesh = buildHull();
+ship.add(hullMesh);
+
+/* ── area layer: outline + fill + keep-outs + occupied rects + an invisible drop plane ── */
+const rectGeom = (r) => {
+  const g = new THREE.PlaneGeometry(r.xMax - r.xMin, r.zMax - r.zMin);
+  g.rotateX(-Math.PI / 2);
+  g.translate(sceneX((r.xMin + r.xMax) / 2), 0, (r.zMin + r.zMax) / 2);
+  return g;
+};
+const outlineOf = (r, y, color) => {
+  const pts = [
+    new THREE.Vector3(sceneX(r.xMin), y, r.zMin), new THREE.Vector3(sceneX(r.xMax), y, r.zMin),
+    new THREE.Vector3(sceneX(r.xMax), y, r.zMax), new THREE.Vector3(sceneX(r.xMin), y, r.zMax),
+    new THREE.Vector3(sceneX(r.xMin), y, r.zMin),
+  ];
+  return new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color }));
+};
+
+/** A keep-out drawn only where it actually eats into the usable rect (null when it misses it). */
+function clipToRect(k, r) {
+  const c = { xMin: Math.max(k.xMin, r.xMin), xMax: Math.min(k.xMax, r.xMax), zMin: Math.max(k.zMin, r.zMin), zMax: Math.min(k.zMax, r.zMax) };
+  return c.xMax > c.xMin && c.zMax > c.zMin ? c : null;
+}
+
+const areaLayers = new Map();      // areaId -> { group, dropPlane, occupied: Group }
+for (const area of AREAS) {
+  const group = new THREE.Group();
+  const y = area.surfaceY;
+
+  const fill = new THREE.Mesh(rectGeom(area.rect), new THREE.MeshBasicMaterial({
+    color: "#2e9e5b", transparent: true, opacity: 0.2, depthWrite: false,
+  }));
+  fill.position.y = y + 0.02;
+  fill.raycast = () => null;
+  group.add(fill, outlineOf(area.rect, y + 0.03, "#2e9e5b"));
+
+  for (const k of area.keepOuts) {
+    const c = clipToRect(k, area.rect);
+    if (!c) continue;                     // wholly outside the usable rect — nothing to warn about
+    const m = new THREE.Mesh(rectGeom(c), new THREE.MeshBasicMaterial({ color: "#8a97a3", transparent: true, opacity: 0.9, depthWrite: false }));
+    m.position.y = y + 0.04;
+    m.raycast = () => null;
+    group.add(m, outlineOf(c, y + 0.05, "#67737f"));
+  }
+
+  const occupied = new THREE.Group();
+  group.add(occupied);
+
+  // The drop plane: one per area, at surfaceY, invisible but pickable (material.visible = false
+  // keeps the object raycastable — the same trick EmptySlotPicker uses for container slots).
+  const dropPlane = new THREE.Mesh(rectGeom(area.rect), new THREE.MeshBasicMaterial({ visible: false }));
+  dropPlane.position.y = y;
+  dropPlane.userData.areaId = area.id;
+  group.add(dropPlane);
+
+  ship.add(group);
+  areaLayers.set(area.id, { group, dropPlane, occupied, area });
+}
+
+/* ── cargo meshes ── */
+function cargoMesh(item, pose, opts = {}) {
+  const [ex, ez] = extentOf(item, pose.rotation_deg);
+  const geo = new THREE.BoxGeometry(ex, item.height_m, ez);
+  const mat = opts.ghost
+    ? new THREE.MeshBasicMaterial({ color: opts.color, transparent: true, opacity: 0.38, depthWrite: false })
+    : new THREE.MeshStandardMaterial({ color: item.color, roughness: 0.6, metalness: 0.12 });
+  const mesh = new THREE.Mesh(geo, mat);
+  const surfaceY = areaById.get(pose.areaId).surfaceY;
+  mesh.position.set(sceneX(pose.x_m), surfaceY + item.height_m / 2, pose.z_m);
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: opts.ghost ? opts.color : "#43515d" }));
+  mesh.add(edges);
+  return mesh;
+}
+
+let placedMeshes = [];
+function renderPlacements() {
+  for (const m of placedMeshes) { m.parent?.remove(m); m.geometry.dispose(); }
+  placedMeshes = [];
+  for (const layer of areaLayers.values()) layer.occupied.clear();
+
+  for (const p of placements) {
+    if (inHand && inHand.cargo.id === p.cargo.id) continue;      // the item being moved is lifted off
+    const layer = areaLayers.get(p.areaId);
+    const mesh = cargoMesh(p.cargo, p);
+    mesh.userData.cargoId = p.cargo.id;
+    layer.group.add(mesh);
+    placedMeshes.push(mesh);
+
+    // its dark footprint on the deck — "occupied", the thing a drop must avoid
+    const fp = new THREE.Mesh(rectGeom(footprint(p.cargo, p)), new THREE.MeshBasicMaterial({ color: "#39424b", transparent: true, opacity: 0.55, depthWrite: false }));
+    fp.position.y = layer.area.surfaceY + 0.06;
+    fp.raycast = () => null;
+    layer.occupied.add(fp);
+  }
+}
+
+/* ───────────────────────── gesture state ───────────────────────── */
+let inHand = null;              // { cargo, rotation_deg, fromPlacement }
+let pose = null;                // { areaId, x_m, z_m, rotation_deg }
+let ghost = null;
+let lastVerdict = null;
+
+const verdictEl = document.getElementById("verdict");
+const readoutEl = document.getElementById("readout");
+const view = { onDeck: true, underDeck: false, hull: true, clamp: true };
+
+function areaVisible(area) { return area.onDeck ? view.onDeck : view.underDeck; }
+
+function applyView() {
+  for (const { group, area } of areaLayers.values()) group.visible = areaVisible(area);
+  // The hull is hidden automatically while placing into a hold — otherwise the shell plating sits
+  // between the camera and the tank top the planner is aiming at.
+  hullMesh.visible = view.hull && !(view.underDeck && inHand);
+}
+
+function setGhost() {
+  if (ghost) { ghost.parent?.remove(ghost); ghost.geometry.dispose(); ghost = null; }
+  if (!inHand || !pose) { verdictEl.hidden = true; lastVerdict = null; renderReadout(); return; }
+  const result = checkPose(inHand.cargo, pose, inHand.cargo.id);
+  lastVerdict = result;
+  const color = result.verdict === "valid" ? "#2e9e5b" : result.verdict === "warning" ? "#d79a17" : "#cf3b3b";
+  ghost = cargoMesh(inHand.cargo, pose, { ghost: true, color });
+  ghost.raycast = () => null;
+  areaLayers.get(pose.areaId).group.add(ghost);
+
+  verdictEl.hidden = false;
+  verdictEl.className = `verdict ${result.verdict}`;
+  verdictEl.textContent = result.verdict === "valid"
+    ? `Drop here — ${areaById.get(pose.areaId).label}`
+    : `${result.verdict === "warning" ? "Accepted, recorded" : "Refused"} — ${result.message}`;
+  renderReadout();
+}
+
+function renderReadout() {
+  if (!inHand) { readoutEl.innerHTML = `<tr><td class="muted">nothing in hand — pick an item above</td></tr>`; return; }
+  const rows = [
+    ["item", inHand.cargo.label],
+    ["size", `${inHand.cargo.length_m} × ${inHand.cargo.width_m} × ${inHand.cargo.height_m} m · ${inHand.cargo.weight_t} t`],
+    ["area", pose ? areaById.get(pose.areaId).label : "—"],
+    ["x_m / z_m", pose ? `${pose.x_m.toFixed(1)} / ${pose.z_m.toFixed(1)}` : "—"],
+    ["rotation", `${inHand.rotation_deg}°`],
+    ["verdict", lastVerdict ? lastVerdict.verdict : "—"],
+  ];
+  readoutEl.innerHTML = rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("");
+}
+
+/* ── pointer → area → snapped pose ── */
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+
+function poseFromPointer(ev) {
+  ndc.set((ev.clientX / innerWidth) * 2 - 1, -(ev.clientY / innerHeight) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const planes = [...areaLayers.values()].filter((l) => areaVisible(l.area)).map((l) => l.dropPlane);
+  const hit = raycaster.intersectObjects(planes, false)[0];
+  if (!hit) return null;
+  const local = ship.worldToLocal(hit.point.clone());
+  const raw = {
+    areaId: hit.object.userData.areaId,
+    x_m: local.x + VESSEL.lengthM / 2,
+    z_m: local.z,
+    rotation_deg: inHand.rotation_deg,
+  };
+  return view.clamp ? clampPose(inHand.cargo, raw) : { ...raw, x_m: snap(raw.x_m), z_m: snap(raw.z_m) };
+}
+
+renderer.domElement.addEventListener("pointermove", (ev) => {
+  verdictEl.style.left = `${ev.clientX}px`;
+  verdictEl.style.top = `${ev.clientY}px`;
+  if (!inHand) return;
+  pose = poseFromPointer(ev) ?? pose;
+  setGhost();
+});
+
+renderer.domElement.addEventListener("click", (ev) => {
+  if (inHand) {
+    const target = poseFromPointer(ev);
+    if (!target) return;
+    const result = checkPose(inHand.cargo, target, inHand.cargo.id);
+    if (result.verdict === "invalid") { pose = target; setGhost(); return; }   // refused: stay in hand
+    const existing = placements.find((p) => p.cargo.id === inHand.cargo.id);
+    if (existing) Object.assign(existing, target, { cargo: inHand.cargo });
+    else placements.push({ cargo: inHand.cargo, ...target });
+    inHand = null; pose = null;
+    setGhost(); renderPlacements(); syncItemButtons(); applyView();
+    return;
+  }
+  // nothing in hand → clicking a placed item picks it up (the "press to move" path)
+  ndc.set((ev.clientX / innerWidth) * 2 - 1, -(ev.clientY / innerHeight) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hit = raycaster.intersectObjects(placedMeshes, false)[0];
+  if (!hit) return;
+  const p = placements.find((q) => q.cargo.id === hit.object.userData.cargoId);
+  if (!p) return;
+  inHand = { cargo: p.cargo, rotation_deg: p.rotation_deg };
+  pose = { areaId: p.areaId, x_m: p.x_m, z_m: p.z_m, rotation_deg: p.rotation_deg };
+  renderPlacements(); setGhost(); syncItemButtons(); applyView();
+});
+
+addEventListener("keydown", (ev) => {
+  const k = ev.key.toLowerCase();
+  if (k === "r" && inHand) {
+    inHand.rotation_deg = inHand.rotation_deg === 0 ? 90 : 0;
+    if (pose) { pose.rotation_deg = inHand.rotation_deg; if (view.clamp) pose = clampPose(inHand.cargo, pose); }
+    setGhost();
+  } else if (k === "escape") {
+    inHand = null; pose = null; setGhost(); renderPlacements(); syncItemButtons(); applyView();
+  } else if (k === "delete" || k === "backspace") {
+    if (!inHand) return;
+    const i = placements.findIndex((p) => p.cargo.id === inHand.cargo.id);
+    if (i >= 0) placements.splice(i, 1);
+    inHand = null; pose = null; setGhost(); renderPlacements(); syncItemButtons(); applyView();
+  }
+});
+
+/* ── unplaced list (the drag source) ── */
+const itemsEl = document.getElementById("items");
+function syncItemButtons() {
+  itemsEl.innerHTML = "";
+  for (const item of CATALOG) {
+    const placed = placements.some((p) => p.cargo.id === item.id);
+    const b = document.createElement("button");
+    b.textContent = placed ? `${item.label} ✓` : item.label;
+    b.setAttribute("aria-pressed", String(inHand?.cargo.id === item.id));
+    b.title = placed ? "already placed — click it in the scene to move it" : "pick up";
+    b.onclick = () => {
+      if (placed) return;
+      inHand = { cargo: item, rotation_deg: 0 };
+      pose = null; setGhost(); syncItemButtons(); applyView();
+    };
+    itemsEl.appendChild(b);
+  }
+  renderReadout();
+}
+
+for (const [id, key] of [["onDeck", "onDeck"], ["underDeck", "underDeck"], ["hull", "hull"], ["clamp", "clamp"]]) {
+  const el = document.getElementById(id);
+  el.onchange = () => { view[key] = el.checked; applyView(); if (inHand) setGhost(); };
+}
+
+syncItemButtons();
+renderPlacements();
+applyView();
+
+addEventListener("resize", () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  frameVessel();
+});
+frameVessel();
+
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+</script>
+</body>
+</html>

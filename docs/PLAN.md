@@ -47,8 +47,8 @@ pass the same rule engine a human plan passes. The "AI" is layered on top of a c
 - [x] Live violations panel: validation re-runs on every edit. Runs in the frontend (`engine/validate-plan.ts`); the backend `/validate` endpoint is not called by the demo
 - [x] Undo/redo on the frontend (`usePlanDraftStore`, cap 100); saved versions in DB still pending
 - [ ] BAPLIE export
-- [x] Drop UX: three-state verdict (`lib/drop-verdict.ts`), one wording layer (`lib/drop-feedback.ts`), nearest-centre slot resolution (`lib/nearest-slot.ts`), at-cursor chip, cursor affordances. **Uncommitted and not browser-verified** — see [project-roadmap.md](./project-roadmap.md) P1/P2
-- [x] Retrieve from a long unplaced list: pure `lib/unplaced-query.ts` + `UnplacedListControls.tsx` (search, filters, sort, grouping, "fits bay", arrow-key nav). **Uncommitted and not browser-verified** — see [project-roadmap.md](./project-roadmap.md) P2
+- [x] Drop UX: three-state verdict (`lib/drop-verdict.ts`), one wording layer (`lib/drop-feedback.ts`), nearest-centre slot resolution (`lib/nearest-slot.ts`), at-cursor chip, cursor affordances. **Committed 2026-09-17 as `b61234a`; browser-exercised, full click-through 22–34 outstanding** — see [project-roadmap.md](./project-roadmap.md) P1/P2
+- [x] Retrieve from a long unplaced list: pure `lib/unplaced-query.ts` + `UnplacedListControls.tsx` (search, filters, sort, grouping, "fits bay", arrow-key nav). **Committed 2026-09-17 as `b61234a`; browser-exercised, full click-through 22–34 outstanding** — see [project-roadmap.md](./project-roadmap.md) P2
 
 **Exit:** a planner can fix a plan by hand and see every rule broken in real time.
 

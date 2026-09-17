@@ -88,9 +88,9 @@ cargo-planner/
 | `engine/placement/` | **One predicate per cargo kind**, shared by drop UI, ghost and full-plan validation (5 files) | canPlaceContainer, canPlaceBreakbulk, BreakbulkPose, PlacementResult, Reason, validSlotsFor, blockedSlots, blockedReasonFor, verdictOf, RULE_SEVERITY | ✓ Complete |
 | `engine/breakbulk-deck-area.ts` | **Temporary shim** — thin wrappers resolving the model's area by id (11 exports) so old callers work; delete in Phase E | deckArea, deckKeepOuts, cargoBaseHeight, maxCargoHeight, stowageAreaIds, … | ✓ Complete (shim) |
 | `lib/drop-verdict.ts` | "What would dropping on THIS slot do" — one verdict read by the ghost, placeholders, bay plan and sidebar; also owns the shared slot-visibility rule and `DROP_TINT` | verdictForSlot, verdictsForSlots, DROP_TINT, slotVisible | ✓ Complete |
-| `lib/drop-feedback.ts` | **P1:** the ONE wording for what a drop *would* do and what it *did* (P1/D4) — chip, ContainerInspector and bay-plan notice all render its output; also owns `dropCursorClass` | dropOutcomeOf, dropVerdictText, dropOutcomeText, dropCursorClass, DropOutcome, DropTone | ✓ Complete (unit-tested; browser-unverified) |
-| `lib/nearest-slot.ts` | **P1:** slot resolution — nearest slot **centre** to the cursor ray's tier-plane crossing (replaces "which pick box the ray entered first") | cursorOnTierPlane, nearestSlotIndex | ✓ Complete (unit-tested; browser-unverified) |
-| `lib/unplaced-query.ts` | **P2:** pure search/filter/sort/group/arrow-key query over the unplaced rows; `DEFAULT_UNPLACED_QUERY` reproduces the pre-P2 rendering exactly | queryUnplacedRows, unplacedHeaderLabel, nextRowIndex, DEFAULT_UNPLACED_QUERY, UnplacedQuery | ✓ Complete (unit-tested; browser-unverified) |
+| `lib/drop-feedback.ts` | **P1:** the ONE wording for what a drop *would* do and what it *did* (P1/D4) — chip, ContainerInspector and bay-plan notice all render its output; also owns `dropCursorClass` | dropOutcomeOf, dropVerdictText, dropOutcomeText, dropCursorClass, DropOutcome, DropTone | ✓ Complete (unit-tested; browser-exercised — click-through 22–34 outstanding) |
+| `lib/nearest-slot.ts` | **P1:** slot resolution — nearest slot **centre** to the cursor ray's tier-plane crossing (replaces "which pick box the ray entered first") | cursorOnTierPlane, nearestSlotIndex | ✓ Complete (unit-tested; browser-exercised — click-through 22–34 outstanding) |
+| `lib/unplaced-query.ts` | **P2:** pure search/filter/sort/group/arrow-key query over the unplaced rows; `DEFAULT_UNPLACED_QUERY` reproduces the pre-P2 rendering exactly | queryUnplacedRows, unplacedHeaderLabel, nextRowIndex, DEFAULT_UNPLACED_QUERY, UnplacedQuery | ✓ Complete (unit-tested; browser-exercised — click-through 22–34 outstanding) |
 | `lib/geometry.ts` | 3D coordinate transforms | slotToPosition, bayCenterX, rowCenterZ, tierCenterY, DIM, LAYOUT | ✓ Complete |
 | `lib/colors.ts` | Color schemes by attribute (POD palette, weight ramp, type/IMDG) | podColorMap, containerColor, HIGHLIGHT | ✓ Complete |
 | `lib/ship-attitude-transform.ts` | Transform weight distribution (LCG, TCG, KG) to ship sinking/healing angles | shipAttitudeFromWeights, ShipAttitude | ✓ Complete |
@@ -117,14 +117,14 @@ cargo-planner/
 | `features/viewer3d/SlotPlaceholders.tsx` | Translucent box on every VALID slot while a container is dragged or picked; one InstancedMesh, `raycast={() => null}` so it is a hint layer, not a target layer | SlotPlaceholders | ✓ Complete |
 | `features/viewer3d/EmptySlotPicker.tsx` | The **pick/target layer**: invisible InstancedMesh over the empty slots the cursor may target; owns the ray, the tier plane and the `nearestSlotIndex` resolution; the single click and release trigger both call `commitPlacement` | EmptySlotPicker | ✓ Complete |
 | `features/viewer3d/GhostContainerPreview.tsx` | The box that follows the cursor during a drag, tinted green/amber/red from `DROP_TINT` | GhostContainerPreview | ✓ Complete |
-| `features/viewer3d/DropVerdictChip.tsx` | **P1:** at-cursor verdict chip — the hover verdict or the last committed `dropOutcome`; `aria-hidden` by design (the Sidebar stays the screen-reader source, so pointer moves don't spam `aria-live`) | DropVerdictChip | ✓ Complete (unit-tested; browser-unverified) |
-| `features/viewer3d/use-drop-cursor.ts` | **P1:** returns the `.viewport` cursor class list (grab / grabbing / pointer / not-allowed / crosshair) plus the `viewport-armed` 2 px ring while a box is in hand | useDropCursor | ✓ Complete (unit-tested; browser-unverified) |
+| `features/viewer3d/DropVerdictChip.tsx` | **P1:** at-cursor verdict chip — the hover verdict or the last committed `dropOutcome`; `aria-hidden` by design (the Sidebar stays the screen-reader source, so pointer moves don't spam `aria-live`) | DropVerdictChip | ✓ Complete (unit-tested; browser-exercised — click-through 22–34 outstanding) |
+| `features/viewer3d/use-drop-cursor.ts` | **P1:** returns the `.viewport` cursor class list (grab / grabbing / pointer / not-allowed / crosshair) plus the `viewport-armed` 2 px ring while a box is in hand | useDropCursor | ✓ Complete (unit-tested; browser-exercised — click-through 22–34 outstanding) |
 | `features/bayplan/BayPlanView.tsx` | 2D bay plan (CSS grid, not SVG): bay cross-section, hatch line, weight-by-row bars, click-to-place a dragged/picked box | BayPlanView | ✓ Complete |
 | `features/bayplan/BayPlanDeckBlock.tsx` | One deck's cell grid inside the bay plan; highlights the slots the item in hand may go in | BayPlanDeckBlock | ✓ Complete |
 | `features/panels/Sidebar.tsx` | Composes the sidebar sections below + violations list; owns the window-level release and bay navigation; reads `dropOutcome` from the store | Sidebar | ✓ Partial (displays violations) |
 | `features/panels/ContainerInspector.tsx` | "Container" section: selected/hovered box, or what a drop on the hovered slot would do (renders `lib/drop-feedback.ts` text) | ContainerInspector | ✓ Complete |
 | `features/panels/UnplacedCargoList.tsx` | Unplaced list — the drag source, the WCAG 2.5.7 single-pointer entry point (mousedown drags, click picks), **and** the P2 retrieval surface (search, filters, sort, grouping, roving arrow-key focus) | UnplacedCargoList | ✓ Complete |
-| `features/panels/UnplacedListControls.tsx` | **P2:** presentation-only control bar for the list (search box, size/type selects, "Fits bay NN" toggle, sort, grouping); owns `BAY_CAVEAT` | UnplacedListControls, BAY_CAVEAT | ✓ Complete (unit-tested; browser-unverified) |
+| `features/panels/UnplacedListControls.tsx` | **P2:** presentation-only control bar for the list (search box, size/type selects, "Fits bay NN" toggle, sort, grouping); owns `BAY_CAVEAT` | UnplacedListControls, BAY_CAVEAT | ✓ Complete (unit-tested; browser-exercised — click-through 22–34 outstanding) |
 | `features/panels/ProjectCargoPanel.tsx` | "Project cargo" section (load/clear demo project cargo) | ProjectCargoPanel | ✓ Complete |
 | `features/panels/ViewOptionsPanel.tsx` | "Show" section: hull / deck toggles, bay selector | ViewOptionsPanel | ✓ Complete |
 | `features/panels/use-stowage-keyboard-shortcuts.ts` | Global editing keys: Ctrl/Cmd+Z undo, Shift+Ctrl/Cmd+Z (and Ctrl+Y) redo, Esc cancel; **Esc and the arrow keys return early on INPUT/TEXTAREA**, so the P2 search box never cancels an armed pick or moves the bay | useStowageKeyboardShortcuts | ✓ Complete |
@@ -171,7 +171,7 @@ cargo-planner/
 
 > `POST /api/validate` (backend `engine.validate`) remains the server-side contract, but the running demo never calls it — `api/client.ts` currently has no importers.
 
-### Manual Edit (committed 2026-09-16: Phases A–C; **P1/P2 uncommitted, not browser-verified**)
+### Manual Edit (committed: Phases A–C 2026-09-16, P1/P2 2026-09-17 in `b61234a`)
 
 ```
 1. Planner picks up a container: mousedown-drag from the Unplaced list, or click to PICK it
@@ -197,7 +197,7 @@ cargo-planner/
 5. Validation re-runs against the new draft; Sidebar lists the violations
 ```
 
-### Bulk Retrieval over the Unplaced List (**P2, uncommitted, not browser-verified**)
+### Bulk Retrieval over the Unplaced List (**P2, committed 2026-09-17 in `b61234a`**)
 
 ```
 1. UnplacedListControls writes a UnplacedQuery into UnplacedCargoList's local state
@@ -338,15 +338,26 @@ port_calls(id PK, voyage_id FK, locode, name, sequence, eta, etd)
 
 | Layer | Tool | Coverage | Status |
 |-------|------|----------|--------|
-| Frontend engine + stores | vitest (`environment: 'node'`) | pure-unit | ✓ **75 files / 586 tests passing (2026-09-17)** — incl. stowage-model, placement predicates, draft store, predicate↔report parity, `nearest-slot`, `drop-feedback`, `unplaced-query` |
+| Frontend engine + stores | vitest (`environment: 'node'`) | pure-unit | ✓ **75 files / 586 tests passing (2026-09-17, committed tree)** — incl. stowage-model, placement predicates, draft store, predicate↔report parity, `nearest-slot`, `drop-feedback`, `unplaced-query` |
 | Frontend components | — | — | ○ No DOM/interaction tests (jsdom/happy-dom not installed; `environment: 'node'`; Playwright deferred to Phase E) |
 | Backend | pytest (declared) | — | ○ **No `backend/tests/` directory at all** — pytest collects nothing |
 | Solver benchmarks | Golden-file harness (BAPLIE round-trip) | TBD | ○ Phase 3 |
 
-> The P1/P2 drag-drop UX pass is **unit-tested but not browser-verified** — the pure parts (slot
-> resolution, wordings, outcome lifetime, the list query) are asserted in node tests, but no test or
-> human has driven the actual pointer. See `plans/reports/manual-click-through-260916-phase-c.md`
-> steps 22–34.
+> **`npm test` exits non-zero (exit 1) on a clean checkout — this is NOT a broken app suite.** Vitest
+> reports `30 failed | 75 passed (105)` test *files*, but `586 passed (586)` *tests*, and **all 30
+> failed files live under `.claude/`** (ClaudeKit's own hooks, scripts and skill suites:
+> `.claude/hooks/**`, `.claude/scripts/worktree.test.cjs`,
+> `.claude/skills/{markdown-novel-viewer,chrome-devtools,sequential-thinking,worktree}/**`). **Zero
+> failures under `src/`.** Cause: `frontend/vite.config.ts` has **no `test` block**, so vitest's
+> default `include` glob sweeps `.claude/**/*.test.cjs` / `.test.js` into the run. The app suite
+> (`src/**`) is 75 files / 586 tests green; read the file-level failures as noise until the config
+> gains a `test.include` of `src/**`.
+
+> The P1/P2 drag-drop UX pass is **committed (`b61234a`, 2026-09-17) and manually exercised
+> in-browser** — the drag/drop defect fixed in that commit was found by driving the flow by hand. The
+> pure parts (slot resolution, wordings, outcome lifetime, the list query) are asserted in node tests.
+> The full click-through — steps 22–34 of `plans/reports/manual-click-through-260916-phase-c.md` — is
+> still outstanding.
 
 **To run:**
 ```bash
