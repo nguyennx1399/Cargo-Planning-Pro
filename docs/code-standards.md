@@ -156,6 +156,8 @@ def solve(self, vessel: Vessel, cargo: list[Container], ports: list[PortCall],
 
 ### Testing
 
+> **There are no backend tests.** `backend/tests/` does not exist and has never existed, even though `pytest` and `httpx` are declared in `backend/requirements.txt`. The pattern below is the *intended* convention to follow when the directory is created — do not read it as a description of something that runs today.
+
 **Framework:** pytest
 
 **Pattern:**
@@ -164,7 +166,7 @@ def solve(self, vessel: Vessel, cargo: list[Container], ports: list[PortCall],
 - Arrange-Act-Assert structure
 
 ```python
-# backend/tests/test_slot.py
+# backend/tests/test_slot.py   (directory to be created)
 import pytest
 from app.domain.slot import parse_slot, Slot
 
@@ -209,20 +211,39 @@ def solve(self, vessel, cargo, ports, voyage):
 ```
 frontend/src/
 ├── types/        # Type definitions (domain.ts mirrors backend models)
-├── api/          # HTTP client
+├── api/          # HTTP client — client.ts exists but has ZERO importers (see "HTTP Client")
+├── data/         # Client-side demo plan builder + vessel catalog
 ├── store/        # Zustand stores (usePlanStore = view state, usePlanDraftStore = plan)
 ├── engine/       # Pure domain logic: stowage model, placement checks, validation rules
-├── lib/          # Utilities (geometry, colors, drop verdicts)
-├── components/   # Shared UI primitives
-├── features/     # Feature folders (viewer3d, bayplan, panels)
-└── styles.css    # Global styles
+│   ├── stowage-model/   # build-stowage-model, coords, occupancy, slot-enumeration, types, index
+│   ├── placement/       # can-place-container, can-place-breakbulk, placeholders, reason
+│   ├── placement-checks.ts  # shared primitives (isTwenty, teuOf, sizeFitsBay, tierBelow, plugOk)
+│   └── validate-plan.ts     # the client-side plan-wide validation entry point
+├── lib/          # Utilities (geometry, colors, drop verdicts, drop feedback, slot picking, list query)
+├── components/   # ui/ = shadcn primitives; severity-alert-list.tsx
+├── features/     # Feature folders (viewer3d, bayplan, panels, vessel-onboarding)
+└── styles.css    # Tailwind 4 entry + global styles
 ```
+
+**`lib/` is not one thing.** It holds both low-level plumbing and the app's shared decision logic:
+
+| Module | Role |
+|---|---|
+| `geometry.ts` | Slot ↔ 3D position maths (`DIM`, `LAYOUT`, `bayCenterX`, `slotToPosition`) |
+| `colors.ts` | `containerColor`, `podColorMap`, `HIGHLIGHT` |
+| `drop-verdict.ts` | `DROP_TINT`, `verdictForSlot` (one-entry hover memo), `verdictsForSlots`, `DropVerdict` |
+| `drop-feedback.ts` | **The single wording layer** — see below |
+| `nearest-slot.ts` | `cursorOnTierPlane`, `nearestSlotIndex` — how a cursor ray resolves to a slot |
+| `unplaced-query.ts` | Pure list logic: filter / sort / group / roving focus for the Unplaced list |
+| `ship-frame.ts`, `ship-attitude-transform.ts`, `use-indicative-stability.ts` | Ship-frame conversion and DEMO stability |
+
+**`lib/drop-feedback.ts` is to wording what `engine/placement/` is to rules:** one function per sentence (`dropVerdictText`, `dropOutcomeText`, `dropCursorClass`, `quotedReason`, `dropOutcomeOf`) so that the ghost, the chip, the cursor and the Sidebar readout **cannot disagree**. Change a sentence here, not at a call site.
 
 **Component naming:** `PascalCase.tsx` (existing convention; tension with CLAUDE.md kebab-case preference)
 
 ### Type Definitions
 
-**Single source of truth:** Mirror backend Pydantic models in TypeScript.
+**Hand-maintained mirror.** `frontend/src/types/domain.ts` copies the shapes from `backend/app/domain/models.py`. There is no code generation and no runtime sharing — the two halves are separate programs, and `api/client.ts` (the only thing that would have coupled them) has no importers. Change one side, change the other; nothing will fail loudly if you forget.
 
 ```typescript
 // frontend/src/types/domain.ts
@@ -300,7 +321,7 @@ export default function App() {
 
 **Pattern:** Two stores with distinct ownership — view state in `usePlanStore`, the editable plan in `usePlanDraftStore`. Plan data is NOT in the React Query cache.
 
-**`usePlanStore` — view state only** (`colorMode`, `paletteMode`, `showHull`, deck toggles, `bayFilter`, `hoveredId`, `selectedId`, playback, plus the gesture state `hoveredSlot`/`draggingContainerId`/`pickedId`). Subscribed narrowly to avoid re-render storms.
+**`usePlanStore` — view state only** (`colorMode` + `paletteMode`, `showHull`, deck toggles, `bayFilter`, `hoveredId`, `selectedId`, playback, plus the gesture state `hoveredSlot` / `draggingContainerId` / `pickedId` / `dropOutcome` and `resetForVesselChange`). Subscribed narrowly to avoid re-render storms.
 
 ```typescript
 // frontend/src/store/usePlanStore.ts
@@ -308,14 +329,24 @@ import { create } from "zustand";
 
 export const usePlanStore = create<ViewState>((set) => ({
   colorMode: "pod",
+  paletteMode: "default",
   showOnDeck: true,
+  hoveredSlot: null,
+  draggingContainerId: null,
+  pickedId: null,
+  dropOutcome: null,
   // ...
   setColorMode: (colorMode) => set({ colorMode }),
   toggleOnDeck: () => set((s) => ({ showOnDeck: !s.showOnDeck })),
-  // A drag start also pauses playback and ends any pick (one item in hand at a time)
-  setDraggingContainer: (id) => set(id === null ? { draggingContainerId: null } : { draggingContainerId: id, pickedId: null, hoveredSlot: null, playbackPlaying: false }),
+  // A drag start also pauses playback and ends any pick (one item in hand at a time), and retires
+  // the previous drop outcome — that outcome belongs to the gesture that just ended.
+  setDraggingContainer: (id) => set(id === null ? { draggingContainerId: null } : { draggingContainerId: id, pickedId: null, hoveredSlot: null, dropOutcome: null, playbackPlaying: false }),
 }));
 ```
+
+**`dropOutcome` has exactly ONE writer:** `store/commit-placement.ts` (`view.setDropOutcome(dropOutcomeOf(result, target, origin))`). Its lifetime is deliberate — a new gesture clears it, hovering a **different** slot clears it, hovering the outcome's own slot or leaving the canvas does **not** (clearing would flicker a message the planner has not read yet). `dropOutcome` replaces the local `releaseNotice` state the Sidebar used to own.
+
+**`activeContainerId(s) = s.draggingContainerId ?? s.pickedId`** is exported from the same module and is the single answer to "what is being placed right now" — the placeholder set, the ghost and the cursor all subscribe to it rather than re-deriving it.
 
 **`usePlanDraftStore` — the only place a plan is mutated from the UI.** Invariants that make it safe to select from directly:
 
@@ -346,13 +377,19 @@ const setSelected = usePlanStore((s) => s.setSelected);
 | `can-place-container.ts` / `can-place-breakbulk.ts` | The predicates: one candidate (item + slot/pose) → `PlacementResult` |
 | `reason.ts` | Rule-id vocabulary + the `RULE_SEVERITY` table (D1) and `PlacementResult` shape |
 | `placement-reason-builders.ts` | Shared message builders; messages stay byte-identical to the plan-wide rules |
-| `placeholders.ts` | `validSlotsFor` / `blockedSlots` / `blockedReasonFor` / `verdictOf` |
+| `placeholders.ts` | `validSlotsFor` (live), `verdictOf` (live), plus `blockedSlots` / `blockedReasonFor` (now test-only, see below) |
+
+**The legacy `engine/placement-checks.ts` sits one level up and is still live.** It holds the shared primitives `isTwenty`, `teuOf`, `sizeFitsBay`, `tierBelow`, `plugOk` and is imported by **both** the predicates above and the new `lib/unplaced-query.ts`. That shared import is what keeps the size/parity notion identical between the drop gate and the Unplaced list's "Fits bay" filter — do not fork a second copy of `sizeFitsBay`.
 
 **Rule ids are the same ids** `engine/validation-rules.ts` and `engine/breakbulk-validation-rules.ts` emit, and `breakbulk-validation-rules.ts` now loops over `canPlaceBreakbulk` — so a tooltip and the violations list name the same thing with the same words.
 
-**Performance:** `validSlotsFor` is a per-gesture sweep (≈1.05 ms for 447 slots) — memoise it at the call site. The hover path must use `blockedReasonFor` (one slot, one predicate call), never `blockedSlots`.
+**Performance:** `validSlotsFor` is a per-gesture sweep (≈1.05 ms for 447 slots) — memoise it at the call site, once per gesture start, never per pointer move.
+
+**The hover path is `verdictForSlot`, not `blockedReasonFor`** (P1 review M4 superseded the earlier guidance here): `lib/drop-verdict.ts` runs a single `canPlaceContainer` call per hovered slot behind a **one-entry memo**, so the ghost, the chip, the cursor and the Sidebar readout collapse into ONE predicate call per pointer move. `blockedSlots` / `blockedReasonFor` still exist in `placeholders.ts` but now have **no production call sites** — only the `placeholders.test.ts` suite calls them.
 
 ### HTTP Client
+
+> **This module is currently unused.** `api/client.ts` has **zero importers** and is the only file in `frontend/src` containing `fetch` or an `/api/` path. Everything the UI shows is built client-side (`data/build-demo-plan.ts` → `engine/validate-plan.ts`). Treat the code below as the wire format the backend already implements, ready to be adopted — not as a live integration.
 
 **Pattern:** Typed methods, centralized in one module.
 
@@ -380,13 +417,13 @@ export const api = {
 
 ### 3D Rendering (React Three Fiber)
 
-**Pattern:** Declarative components; one InstancedMesh per container size.
+**Pattern:** Declarative components; ONE `instancedMesh` for every container size (per-instance matrix scale sets the length).
 
 ```typescript
 // frontend/src/features/viewer3d/ContainerInstances.tsx
 export function ContainerInstances({ vessel, plan }: Props) {
-  // Group placements by container size
-  // Render InstancedMesh per size group
+  // One instancedMesh for all sizes — do NOT group by size
+  // Per-instance matrix scale (LENGTH_BY_SIZE) renders each length correctly
   // Implement raycast selection via instanceId
 }
 ```
@@ -428,31 +465,19 @@ export function slotToPosition(vessel: Vessel, slot: Slot): [number, number, num
 
 ### Styles
 
-**Pattern:** CSS Grid layout, CSS variables for colors (future).
+**Pattern:** Tailwind 4 via `@tailwindcss/vite` (`@import "tailwindcss"` at the top of `styles.css`), plus shadcn primitives under `components/ui/` (`button`, `select`, `input`, `checkbox`, `slider`, `toggle`, `toggle-group`, `textarea`, `label`, `alert`). Hand-written CSS in `styles.css` still owns the app shell and a set of long-standing class names (`.layout`, `.stage`, `.viewport`, `.bayplan`, `.sidebar`, `.legend`, `.kv`, `.unplaced-*`, `.drop-chip`, `.viewport-armed`).
+
+**Note:** there is **no Tailwind config file and no `tailwind.config.js`** — v4 is configured through the `@theme inline` block inside `styles.css`.
 
 ```css
-/* frontend/src/styles.css */
-.layout {
-  display: grid;
-  grid-template-columns: 320px 1fr;
-  height: 100vh;
-}
-
-.stage {
-  display: grid;
-  grid-template-rows: 1fr 200px;
-}
-
-.viewport {
-  flex: 1;
-  overflow: hidden;
-}
-
-.bayplan {
-  border-top: 1px solid #e0e0e0;
-  overflow-y: auto;
-}
+/* frontend/src/styles.css — app shell as it actually is */
+.layout  { display: grid; grid-template-columns: 300px 1fr; height: 100%; }
+.stage   { display: grid; grid-template-rows: minmax(220px, 65%) minmax(160px, 35%); }
+.viewport { position: relative; min-height: 0; background: var(--stage); }
+.bayplan  { border-top: 1px solid var(--line); background: #fff; padding: 10px 14px; }
 ```
+
+**Convention:** two token families live side by side at the top of `styles.css`. The shadcn/`@theme inline` set (`--background`, `--foreground`, `--card`, …) is re-declared under `.dark`, so theme switching works. The older **app tokens** (`--ink`, `--ink-soft`, `--line`, `--panel`, `--stage`, `--signal`, `--error`, `--ok`) are declared once and are **not** re-declared under `.dark`. Prefer the app tokens for handwritten CSS and the theme tokens inside `components/ui/`; do not hard-code hex values in JSX.
 
 ### Comments
 
@@ -473,8 +498,8 @@ export function slotToPosition(vessel: Vessel, slot: Slot): [number, number, num
 **Inline comments:** Rare; non-obvious logic only.
 
 ```typescript
-// groupBy size to minimize InstancedMesh count (perf optimization)
-const groups = groupBy(plan.placements, p => containerSize(p.container_id));
+// Memoised per plan in a WeakMap — collapses every reader to ONE call per pointer move
+const verdict = verdictForSlot(vessel, plan, container, slot);
 ```
 
 ### TODO Comments (Phase Tracking)
@@ -487,7 +512,28 @@ Same format as backend: `TODO(phase-N): description`
 // TODO(phase-2): importBaplie(file), exportBaplie(planId)
 ```
 
-## Naming Conventions Summary
+### Testing (Frontend)
+
+**Framework:** Vitest ^3.2.7, run with `npm test` (`vitest run`) from `frontend/`.
+
+**Current state:** **75 test files, 586 tests, all passing** (~5 s warm). Tests live in `__tests__/` folders next to the module they cover (`src/lib/__tests__/`, `src/engine/__tests__/`, `src/store/__tests__/`, `src/data/__tests__/`, …).
+
+**Environment — read this before writing any test:**
+
+- There is **no vitest config file** and **no setup file**. Vitest therefore runs with its default `environment: "node"`.
+- **jsdom and @testing-library are deliberately not installed.** No DOM, no `render()`, no `fireEvent`, no component tests.
+- Consequently every test must target a **pure function**: engine rules, placement predicates, the stowage model, the list query, the drop-wording functions, the store reducers. If you need to test interactive behaviour, extract the decision into a pure module first — that is exactly why `lib/nearest-slot.ts`, `lib/drop-feedback.ts` and `lib/unplaced-query.ts` are separate files.
+
+```typescript
+// frontend/src/lib/__tests__/nearest-slot.test.ts — the shape every frontend test has
+import { describe, expect, it } from "vitest";
+import { nearestSlotIndex } from "@/lib/nearest-slot";
+// arrange → act → assert, plain values only
+```
+
+**Verification gate:** `npm test` plus `npm run build` (which is `tsc --noEmit && vite build`). There is **no CI**, so these are run by hand.
+
+> **Caveat that matters for the docs:** because there is no DOM environment, the drag/drop/pick-and-place UX pass (P1 + P2) is covered **only** at the pure-function level. Interactive behaviour — hover resolution, chip placement, cursor classes, Esc-guard behaviour in the search box — has **never been executed by a test or a human**. Manual click-through steps 22–34 in `plans/reports/manual-click-through-260916-phase-c.md` are outstanding.
 
 | Scope | Convention | Example |
 |-------|-----------|---------|
@@ -527,18 +573,19 @@ Same format as backend: `TODO(phase-N): description`
 
 **Backend (VSCode):**
 - Install `Python` and `Pylance` extensions
-- `.venv` auto-detected for linting/autocomplete
-- Format: black (configured in `pyproject.toml` future)
+- `.venv` auto-detected for autocomplete
+- Format: none configured today (black would go in a future `pyproject.toml`)
 
 **Frontend (VSCode):**
-- Install `TypeScript Vue Plugin`, `Volar` extensions
+- Install the `ES7+ React/Redux/React-Native snippets` and `Tailwind CSS IntelliSense` extensions (React project — **Volar/Vue plugins are not relevant**)
 - `@` alias configured in `vite.config.ts` and `tsconfig.json`
-- Format: Prettier (configured in `.prettierrc` future)
+- Format: none configured today (Prettier would go in a future `.prettierrc`)
 
 ## Open Questions & Decisions
 
 1. **Auto-generate TS types?** (Phase 2: use `openapi-typescript`)
 2. **Component file naming:** Keep PascalCase or migrate to kebab-case?
-3. **Linting:** Configure ESLint + Prettier (frontend), black + isort (backend)?
-4. **Pre-commit hooks:** Run tsc + pytest before commit?
+3. **Linting:** **Nothing exists today** — no ESLint config, no Prettier config, no black/isort/ruff config anywhere in the repo. Adding one is an open decision, not a description of current state.
+4. **Pre-commit hooks / CI:** **No CI exists** (`.github/` is absent) and there are no git hooks. Until one is added, `npm run build` (tsc + vite) and `npm test` are manual gates.
 5. **API versioning:** Support `/api/v1/` routes? Defer to phase 4.
+6. **Wire the frontend to the backend, or delete `api/client.ts`?** The client, the Vite proxy and the React Query provider are all in place but unused; either finish the integration or remove the scaffolding.

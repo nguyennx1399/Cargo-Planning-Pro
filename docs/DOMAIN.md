@@ -19,14 +19,23 @@
 
 ## Hard constraints (target list)
 
-1. Size fits slot (20' in odd bay, 40' in even bay, no 20' under 40' unless allowed)
-2. Stack weight ≤ limit (per row, under/on deck)
-3. Stack height ≤ limit (hatch clearance, visibility line on deck)
-4. Reefer only on slots with plugs
-5. IMDG segregation (distance/separation by class)
-6. No floating container (must be supported below)
-7. Stability: GM ≥ min, trim/list within limits
-8. Longitudinal strength: SF/BM ≤ allowable
+Status column = what the code enforces **today**. The live gate is the frontend predicate
+`engine/placement/can-place-container.ts`; `/api/validate` implements a thinner subset, so a plan
+can pass one and fail the other.
+
+| # | Constraint | Status |
+|---|---|---|
+| 1 | Size fits slot (20' in odd bay, 40' in even bay, no 20' under 40' unless allowed) | **enforced** — `size_fits_bay` + `twenty_on_forty` |
+| 2 | Stack weight ≤ limit (per row, under/on deck) | **enforced** — `stack_weight` |
+| 3 | Stack height ≤ limit (hatch clearance, visibility line on deck) | **partly** — `max_height` (hatch clearance) is enforced; the on-deck visibility line is TODO |
+| 4 | Reefer only on slots with plugs | **enforced** — `reefer_plug` |
+| 5 | IMDG segregation (distance/separation by class) | **not implemented** — no rule anywhere; `imdg_class` is carried but never checked |
+| 6 | No floating container (must be supported below) | **enforced** — `no_floating` |
+| 7 | Stability: GM ≥ min, trim/list within limits | **DEMO/indicative only — NOT a hard constraint.** Nothing enforces these as limits. The frontend (`engine/stability-indicative.ts`) computes GM/trim/list/drafts with advisory warning thresholds and is explicitly labelled demo-grade, not for operational use; the backend (`stability/calc.py`) is a stub that sums cargo weight and leaves every other field `None`. Treat as a target for phase 4 |
+| 8 | Longitudinal strength: SF/BM ≤ allowable | **not implemented** — no shear-force or bending-moment calculation exists in either half; backend `stability/calc.py` documents it as a phase-4 TODO |
+
+Item 7 is listed here because it is a *target*, not because the system checks it. Per IACS UR L5, any
+stability figure this app produces must be re-verified on a class-approved loading computer.
 
 ## Soft objectives
 

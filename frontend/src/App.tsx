@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { StowagePlan, Vessel } from "@/types/domain";
 import { Button } from "@/components/ui/button";
 import { VesselScene } from "@/features/viewer3d/VesselScene";
+import { DropVerdictChip } from "@/features/viewer3d/DropVerdictChip";
+import { useDropCursor } from "@/features/viewer3d/use-drop-cursor";
 import { Sidebar } from "@/features/panels/Sidebar";
 import { BayPlanView } from "@/features/bayplan/BayPlanView";
 import { OffsetsImportPanel } from "@/features/vessel-onboarding/OffsetsImportPanel";
@@ -65,6 +67,9 @@ export default function App() {
   const plan = draftPlan ?? LOADING_PLAN;
   const report = useMemo(() => validatePlan(vessel, plan), [vessel, plan]);
   const attitude = useIndicativeStability(vessel, plan, playbackCount);
+  // The canvas cursor + the "armed" ring for the drop gesture (P1). Computed here because `.viewport`
+  // is this component's element: the class has to sit on the wrapper the canvas inherits from.
+  const dropCursor = useDropCursor(vessel, plan);
 
   const onVesselChange = (id: string) => {
     // Re-picking the already-selected vessel must be a no-op. The catalog memoises `vessel`/`containers`
@@ -115,8 +120,9 @@ export default function App() {
             onToggleProjectCargo={() => setProjectCargoLoaded((v) => !v)}
           />
           <main className="stage">
-            <div className="viewport">
+            <div className={`viewport ${dropCursor}`}>
               <VesselScene vessel={vessel} plan={plan} attitude={attitude} />
+              <DropVerdictChip vessel={vessel} plan={plan} />
             </div>
             <div className="bayplan">
               <BayPlanView vessel={vessel} plan={plan} />

@@ -54,6 +54,11 @@ export function ContainerInstances({ vessel, plan }: Props) {
   // Where a press started, until it either travels past the threshold (a move) or turns out to be a
   // click. A ref, not state: it must not re-render the mesh mid-press.
   const downRef = useRef<{ id: string; x: number; y: number } | null>(null);
+  // Set when this press armed a MOVE (P1/M5): R3F does not gate `onClick` on movement, and after the
+  // drop the instances are re-compacted, so the trailing `click` would select whatever box the ray now
+  // finds under the pointer — possibly a different one than was just moved. Cleared on the next
+  // pointer-down, so an ordinary click still selects (acceptance step 17).
+  const movedRef = useRef(false);
 
   const byId = useMemo(() => new Map(plan.containers.map((c) => [c.id, c])), [plan.containers]);
   const pods = useMemo(() => podColorMap(plan.ports, paletteMode), [plan.ports, paletteMode]);
@@ -127,6 +132,7 @@ export function ContainerInstances({ vessel, plan }: Props) {
       ref={meshRef}
       args={[undefined, undefined, capacity]}
       onPointerDown={(e) => {
+        movedRef.current = false; // a fresh press may click: only a move inside it suppresses it
         const id = idAt(e);
         if (!id) return;
         downRef.current = { id, x: e.nativeEvent.clientX, y: e.nativeEvent.clientY };
@@ -142,6 +148,7 @@ export function ContainerInstances({ vessel, plan }: Props) {
             // Past the threshold this is a MOVE, through the same store key the list drag uses:
             // `setDraggingContainer` hides this instance, pauses playback (D3) and clears any pick.
             downRef.current = null;
+            movedRef.current = true;
             setDraggingContainer(down.id);
             setHovered(null);
             return;
@@ -155,7 +162,9 @@ export function ContainerInstances({ vessel, plan }: Props) {
       onClick={(e) => {
         e.stopPropagation();
         // Only reached when the press never travelled past the threshold (a started move hides this
-        // instance, so the release cannot hit it): a plain click still selects.
+        // instance, so the release cannot hit it): a plain click still selects. The `movedRef` gate is
+        // for the trailing click of a drag-move, which R3F still delivers (M5).
+        if (movedRef.current) return;
         setSelected(idAt(e));
       }}
     >

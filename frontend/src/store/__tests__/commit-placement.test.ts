@@ -6,6 +6,9 @@
  * The load-bearing assertions: both triggers reach the same predicate and the same store action
  * (identical outcome and identical rejection reasons), the two are mutually exclusive, and a
  * rejection keeps a pick alive while clearing a drag.
+ *
+ * The `dropOutcome` these commits record has its own lifetime table, proven in `drop-outcome.test.ts`
+ * (P1/D5) — split out to keep both files under the repo's 200-LOC rule.
  */
 import { beforeEach, describe, expect, it } from "vitest";
 import { cancelPlacement, commitPlacement } from "../commit-placement";
@@ -23,11 +26,8 @@ const load = (plan: StowagePlan) => draft().loadPlan(vessel, plan);
 beforeEach(() => {
   usePlanDraftStore.setState({ vessel: null, plan: null, past: [], future: [] });
   usePlanStore.setState({
-    draggingContainerId: null,
-    pickedId: null,
-    hoveredSlot: null,
-    playbackCount: null,
-    playbackPlaying: false,
+    draggingContainerId: null, pickedId: null, hoveredSlot: null, dropOutcome: null,
+    playbackCount: null, playbackPlaying: false,
   });
 });
 
@@ -157,8 +157,8 @@ describe("drag/pick exclusivity and cancel", () => {
   it("clears a stale hovered slot when a gesture starts, so a click meant to pick cannot commit it", () => {
     load(makePlan([box("a"), box("b")], []));
     // The picker mesh remounts when its pickable count changes and R3F drops an unmounted object's
-    // hover record WITHOUT firing `onPointerOut` (review H1), so this value can outlive the gesture
-    // that produced it — it must not survive into the next one.
+    // hover record WITHOUT firing `onPointerOut` (review H1): this value can outlive the gesture that
+    // produced it, and must not survive into the next one.
     usePlanStore.setState({ hoveredSlot: slot(2, 1, 82) });
 
     view().setPicked("a");
@@ -177,3 +177,4 @@ describe("drag/pick exclusivity and cancel", () => {
     expect(view().draggingContainerId).toBeNull();
   });
 });
+

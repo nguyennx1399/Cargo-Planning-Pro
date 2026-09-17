@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { Container, Slot, StowagePlan, Vessel } from "@/types/domain";
 import { activeContainerId, usePlanStore } from "@/store/usePlanStore";
 import { commitPlacement } from "@/store/commit-placement";
 import { validSlotsFor } from "@/engine/placement/placeholders";
+import { dropOutcomeText } from "@/lib/drop-feedback";
 import { podColorMap } from "@/lib/colors";
 import { visiblePlacements } from "@/engine/playback-slice";
 import { DeckBlock } from "./BayPlanDeckBlock";
@@ -32,12 +33,21 @@ export function BayPlanView({ vessel, plan }: { vessel: Vessel; plan: StowagePla
       playbackCount: state.playbackCount,
       hoveredId: state.hoveredId,
       selectedId: state.selectedId,
+      dropOutcome: state.dropOutcome,
       setHovered: state.setHovered,
       setSelected: state.setSelected,
     }))
   );
   const activeId = usePlanStore(activeContainerId);
-  const [notice, setNotice] = useState<{ text: string; kind: "ok" | "error" } | null>(null);
+  // The 2D notice is the STORE's outcome, not local state (P1/D5): one message, one wording for the
+  // 3D release, the 3D pick click and this panel, so the three cannot drift apart (review M3).
+  // Rendered only for a "bayplan" outcome and only for the bay on screen — a notice about a cell in a
+  // bay the planner is no longer looking at would contradict the grid under it. The Sidebar shows it
+  // either way, so nothing is hidden by that.
+  const notice =
+    s.dropOutcome && s.dropOutcome.origin === "bayplan" && s.dropOutcome.slot.bay === s.bay
+      ? dropOutcomeText(s.dropOutcome)
+      : null;
 
   const pods = useMemo(() => podColorMap(plan.ports, s.paletteMode), [plan.ports, s.paletteMode]);
 
@@ -70,30 +80,17 @@ export function BayPlanView({ vessel, plan }: { vessel: Vessel; plan: StowagePla
     () => (activeContainer ? new Set(validSlotsFor(vessel, plan, activeContainer).map((slot) => slot.key)) : null),
     [vessel, plan, activeContainer]
   );
-  // A stale rejection notice would outlive the gesture it belongs to.
-  useEffect(() => setNotice(null), [s.bay, activeId]);
-
   /** The 2D half of the ONE commit resolver. With nothing in hand this is still "select what I
    * clicked"; with a container in hand it is a drop attempt (a cell click is a single pointer
-   * action, which is what makes the 2D view a WCAG 2.5.7 alternative to dragging). */
+   * action, which is what makes the 2D view a WCAG 2.5.7 alternative to dragging). The outcome needs
+   * no local bookkeeping: the resolver records it and the store clears it on the next gesture or on
+   * hovering a different slot, so it cannot outlive the drop it belongs to. */
   const onCellClick = (slot: Slot, container: Container | undefined) => {
     if (!activeId) {
       s.setSelected(container ? container.id : null);
       return;
     }
-    const result = commitPlacement(slot);
-    if (!result) return; // nothing to commit: not a drop, and not a selection either
-    if (!result.ok) {
-      const reason = result.reasons[0];
-      setNotice({ text: reason ? `Not placed — ${reason.message}` : "Not placed.", kind: "error" });
-      return;
-    }
-    const recorded = result.reasons[0];
-    setNotice(
-      recorded
-        ? { text: `Placed. Recorded, not blocked: ${recorded.message}`, kind: "ok" }
-        : null,
-    );
+    commitPlacement(slot, "bayplan");
   };
 
   if (s.bay === null) {
@@ -119,7 +116,7 @@ export function BayPlanView({ vessel, plan }: { vessel: Vessel; plan: StowagePla
           Placing {activeContainer.id} — outlined cells are valid positions. Click one to place it, Esc to cancel.
         </p>
       )}
-      {notice && <p className={`small ${notice.kind === "ok" ? "ok" : "error"}`}>{notice.text}</p>}
+      {notice && <p className={`small ${notice.tone}`}>{notice.detail}</p>}
       <DeckBlock
         deck="on" bay={s.bay} columns={bayRows} vessel={vessel} containerAt={containerAt} colorMode={s.colorMode} pods={pods}
         hoveredId={s.hoveredId} selectedId={s.selectedId} setHovered={s.setHovered}

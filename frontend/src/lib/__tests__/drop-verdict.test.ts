@@ -7,11 +7,13 @@
  * severity — a warning is never shown as the reason a drop was refused (D1).
  *
  * The 20'-box case pins the acceptance line "A 20' box shows no placeholders in 40' bays": the valid
- * set is the ODD (half) bays only, on both real vessels. There is no DOM test anywhere in this repo
- * and none is added here — the pointer/keyboard path is verified by hand.
+ * set is the ODD (half) bays only, on both real vessels. `slotInBay` — the one answer to "which bay is
+ * this slot in", shared with the Unplaced list's bay filter (P2) — is asserted at the bottom. There
+ * is no DOM test anywhere in this repo and none is added here — the pointer/keyboard path is verified
+ * by hand.
  */
 import { describe, expect, it } from "vitest";
-import { DROP_TINT, verdictForSlot, verdictsForSlots } from "../drop-verdict";
+import { DROP_TINT, slotInBay, verdictForSlot, verdictsForSlots } from "../drop-verdict";
 import { validSlotsFor } from "@/engine/placement/placeholders";
 import { HIGHLIGHT } from "@/lib/colors";
 import { buildBbcSaoPauloVesselAndCargo } from "@/data/bbc-sao-paulo-vessel";
@@ -105,5 +107,27 @@ describe("DROP_TINT", () => {
       warning: HIGHLIGHT.warning,
       invalid: HIGHLIGHT.invalid,
     });
+  });
+});
+
+describe("slotInBay", () => {
+  /** The membership rule the Unplaced list's bay filter shares with `slotVisible` (P2).
+   * Both real vessels number their 40' bays 4 apart (2, 6, 10, …), so every odd half has exactly one
+   * parent. On a conventional grid (2, 4, 6, …) odd bay 3 is the fore half of 4 AND the aft half of 2,
+   * and `bayPosition` resolves it to the fore parent — "which bay is this slot in" would then be a
+   * data-dependent choice, which is why this is worth pinning before real-vessel onboarding. */
+  it.each(REAL)("puts each odd half in exactly its 40' parent and no other bay on %s", (_name, vessel) => {
+    for (const bay of vessel.bays) {
+      for (const half of [bay - 1, bay + 1]) {
+        for (const other of vessel.bays) {
+          // 21 and 23 are both "in bay 22" — and in nothing else.
+          expect(slotInBay({ bay: half, row: 0, tier: 82 }, other, vessel), `half ${half}, bay ${other}`).toBe(other === bay);
+        }
+      }
+      expect(slotInBay({ bay, row: 0, tier: 82 }, bay, vessel)).toBe(true);
+    }
+    // A slot in a bay this vessel does not list (an odd half with no 40' parent, or any stray bay)
+    // belongs to no bay the selector can name.
+    for (const slot of [1, 3, 999]) expect(slotInBay({ bay: slot, row: 0, tier: 82 }, 4242, vessel)).toBe(false);
   });
 });

@@ -6,41 +6,48 @@
 ┌────────────────────────── Frontend (React + R3F) ──────────────────────────┐
 │                                                                              │
 │  ┌─────────────────┐       ┌──────────────────┐       ┌──────────────────┐ │
-│  │     Sidebar     │       │   3D Viewer      │       │   2D Bay Plan    │ │
-│  │  - Plan info    │       │  - Canvas        │       │   - SVG (stub)   │ │
-│  │  - Legend       │       │  - Hull geometry │       │   - Hit test     │ │
-│  │  - Violations   │       │  - Containers    │       │   - Selection    │ │
-│  │  - Controls     │       │  - Raycast       │       │                  │ │
-│  └────────┬────────┘       └────────┬─────────┘       └──────────────────┘ │
-│           └─────────────┬──────────┘                                        │
-│                         ↓                                                   │
-│           ┌─────────────────────────────┐                                   │
-│           │   Zustand View State Store  │                                   │
-│           │  - colorMode (pod|weight|)  │                                   │
-│           │  - selection (hoveredId)    │                                   │
-│           │  - filters (bayFilter)      │                                   │
-│           │  - showOnDeck/UnderDeck     │                                   │
-│           │  - drag/pick gesture        │                                   │
+│  │ Sidebar         │       │   3D Viewer      │       │   2D Bay Plan    │ │
+│  │ Cargo, Project- │       │  Canvas, Hull    │       │  SVG (stub),     │ │
+│  │ Cargo, Loading- │       │  Containers,     │       │  hit test,       │ │
+│  │ Seq, ColorMode, │       │  raycast, drop   │       │  selection,      │ │
+│  │ ViewOptions,    │       │  affordances,    │       │  click-to-place  │ │
+│  │ Stability,      │       │  slot pickers    │       │                  │ │
+│  │ Inspector,      │       │                  │       │                  │ │
+│  │ Unplaced, Checks│       │                  │       │                  │ │
+│  └────────┬────────┘       └────────┬─────────┘       └────────┬─────────┘ │
+│           └─────────────┬──────────┘                           │            │
+│                         ↓                                      │            │
+│           ┌─────────────────────────────┐                      │            │
+│           │   Zustand View State Store  │◄─────────────────────┘            │
+│           │  colorMode + paletteMode    │                                   │
+│           │  hovered/selected id, bay   │                                   │
+│           │  showOn/UnderDeck, hull     │                                   │
+│           │  gesture: hoveredSlot,      │                                   │
+│           │   draggingContainerId,      │                                   │
+│           │   pickedId, dropOutcome     │                                   │
 │           └─────────────┬───────────────┘                                   │
-│                         ↓                                                   │
+│                         ↓ via usePlanDraftStore actions                     │
 │           ┌─────────────────────────────┐                                   │
 │           │ Plan Draft Store            │                                   │
-│           │ - plan + undo/redo          │                                   │
-│           │ - validate-then-mutate      │                                   │
+│           │ plan + undo/redo            │                                   │
+│           │ validate-then-mutate        │                                   │
 │           └─────────────┬───────────────┘                                   │
 │                         ↓                                                   │
 └─────────────────────────────────────────────────────────────────────────────┘
-                          │ REST (JSON)
-                          ↓
+              │ REST (JSON) — CONTRACT ONLY, NOT WIRED (see below)
+              ↓                 no frontend module calls these routes
 ┌────────────────────── Backend (FastAPI) ────────────────────────────────────┐
 │                                                                              │
 │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐         │
 │  │  HTTP Routes     │  │   Validation     │  │   Solver         │         │
-│  │  - GET /health   │  │  - engine.py     │  │  - base.py       │         │
-│  │  - GET /vessels  │  │  - rules.py      │  │  - greedy.py     │         │
-│  │  - POST /plans   │  │  - context.py    │  │  - cpsat.py      │         │
-│  │  - POST /validate│  │                  │  │  - registry.py   │         │
-│  │  - POST /solve   │  │                  │  │                  │         │
+│  │  GET  /health    │  │  - engine.py     │  │  - base.py       │         │
+│  │  GET  /vessels/  │  │  - rules.py      │  │  - greedy.py REAL│         │
+│  │       {id}       │  │  - context.py    │  │  - cpsat.py STUB │         │
+│  │  GET  /plans/    │  │  6 rules live    │  │  - registry.py   │         │
+│  │       demo       │  │                  │  │    (dict literal)│         │
+│  │  POST /validate  │  │                  │  │                  │         │
+│  │  POST /stowage/  │  │                  │  │                  │         │
+│  │       solve      │  │                  │  │                  │         │
 │  └────────┬─────────┘  └────────┬─────────┘  └────────┬─────────┘         │
 │           └─────────────┬───────┘                      │                   │
 │                         ↓                              ↓                   │
@@ -65,7 +72,35 @@
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## Frontend / Backend Wiring — READ THIS FIRST
+
+**The frontend does not call the backend at runtime.** The two halves build and run independently, and any diagram, table or sentence in this document that implies a live client → server request flow describes the *intended* contract, not current behaviour.
+
+| Claim | Reality in code |
+|---|---|
+| `api/` HTTP client | `frontend/src/api/client.ts` exists but has **zero importers**. No `fetch`, no `axios`, no `/api/` path anywhere else in `frontend/src`. |
+| Demo plan source | Built client-side by `frontend/src/data/build-demo-plan.ts`, validated by `frontend/src/engine/validate-plan.ts`. No network involved. |
+| Vite dev proxy | `/api` → `http://localhost:8000` is configured in `vite.config.ts` but unused (only reachable if some module called the client). |
+| React Query | Provider is mounted in `main.tsx`; **no query is registered**, so no request is ever issued. |
+| Backend | Real and runnable (FastAPI, CORS for `http://localhost:5173`, in-memory store), but **standalone / parallel** — it is exercised only via `curl`/docs, not by the UI. |
+
+**Consequence for readers:** the validation rules, the placement predicates and the stowage model are **implemented twice** — once in Python (`backend/app/validation/`) and once in TypeScript (`frontend/src/engine/`). They are kept in sync by convention and by mirrored tests, not by a shared runtime call. Treat the TypeScript copies as the ones the UI actually obeys.
+
+## Verification Status (what is machine-checked vs. human-observed)
+
+| Area | Size | Tests | Notes |
+|---|---|---|---|
+| Frontend (`frontend/src`) | ~17.4k LOC TS/TSX (≈190 files; 17,694 incl. `styles.css`) | **75 test files, 586 tests, all passing** (~5 s warm) | Vitest ^3.2.7; **no vitest config file exists**, so `environment: "node"` is the default |
+| Backend (`backend/app`) | 575 LOC Python | **0 tests** | `backend/tests/` does not exist, despite `pytest` + `httpx` in `requirements.txt` |
+| CI · lint · format | — | **none** | no `.github/`, no ESLint/Prettier config, no git hooks anywhere in the repo |
+
+**No DOM test environment exists.** Vitest runs with `environment: "node"`, and jsdom / testing-library are deliberately not installed. Unit tests cover pure logic only; **no interactive behaviour (drag, hover, drop, keyboard) has ever been exercised by a test or by a human.**
+
+> **Drag-and-drop / pick-and-place UX pass (P1 + P2, plan `plans/260916-2117-optimize-drag-drop-ux/`):** implemented in the working tree, unit-tested, typecheck- and build-green — but **uncommitted and not browser-verified**. Manual click-through steps 22–34 in `plans/reports/manual-click-through-260916-phase-c.md` are outstanding. Do not read anything in this document as "shipped" or "verified" for that work.
+
 ## REST API Reference
+
+> **Not wired.** Nothing in `frontend/src` calls these routes today. This section documents the backend's own contract, useful when wiring the frontend to it or when testing the API directly.
 
 **Base URL:** `http://localhost:8000/api` (dev) or `API_URL` (env)
 
@@ -394,7 +429,7 @@ def validate(vessel: Vessel, plan: StowagePlan) -> ValidationReport:
 **To add a rule:**
 1. Write function in `rules.py`: `def my_rule(ctx: ValidationContext) -> list[Violation]:`
 2. Append to `ALL_RULES`
-3. Write test in `tests/test_validation.py`
+3. Write a test — **there is no `backend/tests/` yet**, so this directory has to be created first. The equivalent frontend logic and its tests live in `frontend/src/engine/validation-rules.ts` and `frontend/src/engine/__tests__/`.
 
 ## Solver Interface & Registry
 
@@ -407,56 +442,79 @@ class StowageSolver(Protocol):
               voyage: str) -> StowagePlan: ...
 ```
 
-**Requirement:** Every solver's output must pass `validate(vessel, plan).ok == True`.
+**Requirement (target, not enforced):** every solver's output must pass `validate(vessel, plan).ok == True`.
 
-**Registry (solver/registry.py):**
+> **Known gap:** this requirement is *not* enforced in code. `GreedySolver.solve()` returns its plan without calling `validate`, and the greedy output **can fail its own rules** — it ignores stack weight, reefer-below and no-floating entirely. Only `POST /api/validate` runs the rules, and the UI never calls it. See the roadmap's Known Gap #1.
+
+**Registry (solver/registry.py):** a module-level dict literal keyed by each class's `.name` attribute. There is **no plugin discovery** — adding a solver means editing this literal.
 
 ```python
 SOLVERS: dict[str, StowageSolver] = {
-    "greedy-v0": GreedySolver(),
-    "cpsat": CpSatSolver(),
+    GreedySolver.name: GreedySolver(),
+    CpSatSolver.name: CpSatSolver(),
 }
 ```
 
 **Current solvers:**
-- `greedy-v0` (phase 3): Sort by discharge order + weight; fill slots bottom-up; no rule checks yet
-- `cpsat` (phase 4, stub): OR-Tools CP-SAT optimizer; master bay planning + slot assignment
+- `greedy-v0` — real. Sorts cargo by discharge order then weight (heavy first), fills free slots bottom-up (under deck before on deck), skipping taken slots. On the placement path it checks **only** the reefer-plug condition: no stack-weight limit, no size-per-bay check, no reefer-below support rule, no floating check — which is why its output can fail `validate`.
+- `cpsat` — **stub**, raises `NotImplementedError("CP-SAT solver arrives in phase 4")`. It is registered, so it is reachable, and `POST /api/stowage/solve` maps that exception to `501`.
 
 ## Frontend State & Store
 
 **Zustand store (usePlanStore):**
 
 ```typescript
+// frontend/src/store/usePlanStore.ts
+type ColorMode   = "pod" | "weight" | "type";     // WHICH quantity drives colour
+type PaletteMode = "default" | "colorblind";       // HOW that quantity is rendered (separate axis)
+
 interface ViewState {
-  colorMode: "pod" | "weight" | "type";  // How to color containers
+  colorMode: ColorMode;
+  paletteMode: PaletteMode;               // colourblind-safe ramp for the same colorMode
+  showHull: boolean;                      // Show hull geometry
   showOnDeck: boolean;                    // Show on-deck containers
   showUnderDeck: boolean;                 // Show under-deck containers
-  showHull: boolean;                      // Show hull geometry
   bayFilter: number | null;               // Filter to one bay (null = all)
   hoveredId: string | null;               // Hovered container ID
   selectedId: string | null;              // Selected container ID
-  
+
+  // Gesture state (see "End-to-end drop flow")
+  hoveredSlot: Slot | null;               // raycast-resolved EMPTY slot under the cursor
+  draggingContainerId: string | null;     // drag gesture; mutually exclusive with pickedId
+  pickedId: string | null;                // WCAG 2.5.7 click-to-pick gesture
+  dropOutcome: DropOutcome | null;        // verdict of the LAST committed drop
+
   // Loading sequence playback (DEMO/indicative)
+  exaggerate: number;                     // 1 (real) or 5 (exaggerated ship attitude angles for visibility)
   playbackCount: number | null;           // null = show all; number = reveal containers up to index
   playbackPlaying: boolean;               // Play/pause toggle
   playbackSpeed: number;                  // Containers per second
-  exaggerate: number;                     // 1 (real) or 5 (exaggerated ship attitude angles for visibility)
-  
+
   // Setters
   setColorMode(m: ColorMode): void;
+  setPaletteMode(m: PaletteMode): void;
+  toggleHull(): void;
   toggleOnDeck(): void;
   toggleUnderDeck(): void;
-  toggleHull(): void;
   setBayFilter(bay: number | null): void;
   setHovered(id: string | null): void;
   setSelected(id: string | null): void;
+  setHoveredSlot(slot: Slot | null): void;      // also retires a stale dropOutcome (different slot)
+  setDraggingContainer(id: string | null): void;
+  setPicked(id: string | null): void;
+  setDropOutcome(o: DropOutcome | null): void;
+  toggleExaggerate(): void;
   startOrResumePlayback(): void;
   pausePlayback(): void;
   resetPlayback(): void;
-  setPlaybackCount(n: number | null): void;
+  setPlaybackCount(n: number): void;
   setPlaybackSpeed(speed: number): void;
-  toggleExaggerate(): void;
+  advancePlayback(deltaCount: number, maxCount: number): void;
+  resetForVesselChange(): void;           // clears every vessel-keyed field, incl. the gesture state
 }
+
+/** The subject of the current gesture: the active drag, else the pick. */
+export const activeContainerId = (s) => s.draggingContainerId ?? s.pickedId;
 ```
 
 **Two stores, distinct ownership.** `usePlanStore` is view state only (above); the **editable plan** lives in `usePlanDraftStore` — the only place the UI mutates a plan.
@@ -477,9 +535,57 @@ interface PlanDraftState {
 
 Invariants: **validate-then-mutate** (a rejected action returns its reasons and changes nothing — no new plan object, no history entry); plans are **never mutated in place** (each action builds a new `StowagePlan`, which keeps history entries valid and lets the engine memoise by plan identity); `unplaced` is **derived** as `containers − placements` on every mutation; `setPicked`/`setDraggingContainer` are mutually exclusive.
 
-Gesture state (`hoveredSlot`, `draggingContainerId`, `pickedId`) is view state and stays in `usePlanStore`; `commit-placement.ts` is the ONE resolver both drop triggers (drag release, click-to-pick) go through, and `features/panels/use-stowage-keyboard-shortcuts.ts` binds Ctrl/Cmd+Z, Shift+Ctrl/Cmd+Z (and Ctrl+Y), Esc.
+Gesture state (`hoveredSlot`, `draggingContainerId`, `pickedId`, `dropOutcome`) is view state and stays in `usePlanStore`. Every gesture setter clears `pickedId`, `hoveredSlot` and `dropOutcome` and pauses playback, so one item is in hand at a time and a stale target from a previous gesture can never be committed. `store/commit-placement.ts` is the ONE resolver both drop triggers (drag release, click-to-pick) go through, and `features/panels/use-stowage-keyboard-shortcuts.ts` binds Ctrl/Cmd+Z, Shift+Ctrl/Cmd+Z (and Ctrl+Y), Esc.
+
+> Esc first returns early when the event target is an `INPUT`/`TEXTAREA`. That guard is load-bearing: the Unplaced list's search box is the app's first text field, and without it pressing Esc while typing would cancel an armed pick.
+
+### End-to-end drop flow (P1/P2 — implemented, unit-tested, **uncommitted, not browser-verified**)
+
+Two triggers, one path. The whole chain runs in the browser; nothing here touches the network.
+
+```
+TRIGGER   drag: UnplacedCargoList.onMouseDown, or ContainerInstances.onPointerDown/-Move
+                past DRAG_THRESHOLD_PX = 4 (a MOVE)  → setDraggingContainer(id)
+          pick: UnplacedCargoList.onClick (WCAG 2.5.7) → setPicked(id)
+          subject = activeContainerId(state) = draggingContainerId ?? pickedId
+
+HOVER     EmptySlotPicker.onPointerMove
+            → cursorOnTierPlane(tierY, origin, dir)  lib/nearest-slot.ts
+            → nearestSlotIndex(cursor, centres)      nearest CENTRE, ties → lowest index
+            → setHoveredSlot(slot)
+
+VERDICT   verdictForSlot(vessel, plan, container, slot)  lib/drop-verdict.ts, one-entry memo
+            → canPlaceContainer(buildStowageModel(vessel),
+                                subjectStrippedPlan(plan, container.id), container, slot, vessel)
+            → "valid" | "warning" | "invalid"
+
+COMMIT    window mouseup / 3D click   → commitPlacement(slot, "scene")
+          2D bay cell click           → commitPlacement(slot, "bayplan")
+          Esc / release outside       → cancelPlacement()
+```
+
+`commitPlacement` picks `moveContainer` vs `placeContainer` (both the same private `putContainer`), strips the subject's own placement first, gates on `canPlaceContainer`, then builds a **new** `StowagePlan`, pushes the old one onto `past`, clears `future`, and re-derives `unplaced` (`HISTORY_CAP = 100`). A refused action returns its reasons and mutates nothing.
+
+**Slot resolution** is now "nearest slot **centre** to the cursor ray's tier-plane crossing", restricted to the candidate set — not three.js's distance-sorted hit order. This replaces two recorded defects: the "camera side decides" ambiguity (H2) and the 0.402 m BBC bay-boundary hazard; the 20' sibling-half dead zone (0.076 m) is gone.
+
+**Feedback surfaces** — every row except the placeholders is fed by the single wording layer `lib/drop-feedback.ts`, so no two can disagree:
+
+| Surface | Module | Notes |
+|---|---|---|
+| Ghost tint | `features/viewer3d/GhostContainerPreview.tsx` | tint from `DROP_TINT` in `lib/drop-verdict.ts` |
+| Valid-slot placeholders | `features/viewer3d/SlotPlaceholders.tsx` | one memoised `validSlotsFor` sweep per gesture; `raycast={() => null}` |
+| At-cursor chip | `features/viewer3d/DropVerdictChip.tsx` | 16/18 px offset, viewport-edge flipped, `aria-hidden` **by design** |
+| Accessible readout | `features/panels/ContainerInspector.tsx` | the screen-reader source; hover sentences and the settled outcome |
+| 2D bay notice | `features/bayplan/BayPlanView.tsx` | shows an outcome only when `origin === "bayplan"` and the bay matches |
+| Cursor + armed ring | `features/viewer3d/use-drop-cursor.ts` | class on `.viewport`; 2 px ring while a pick is armed |
+
+The chip is `aria-hidden` precisely so the pointer-move verdict is not announced on every move — `ContainerInspector` carries the accessible half. `DropOutcome.origin` (`"scene" | "bayplan"`) is what keeps the 2D notice from repeating a 3D drop.
+
+**Wording contract** (one function per sentence in `lib/drop-feedback.ts`): clean drop → **no notice at all**; overstow → `Placed. Recorded, not blocked — the checks below will list it: <reason>` in **amber** (never green or red — the drop *is* accepted); refusal → `Not placed — <reason>` in **red**. A refused **pick** stays armed so the planner can retry; a refused **drag** is cleared.
 
 **Placement checks (`engine/placement/`):** one predicate per cargo kind — `canPlaceContainer` and `canPlaceBreakbulk` — shared by the drop preview, the placeholders and the full-plan validation (the repo's "validator before optimizer" principle). Rule ids and messages are the same ones `engine/validation-rules.ts` / `engine/breakbulk-validation-rules.ts` emit; `breakbulk-validation-rules.ts` now loops over `canPlaceBreakbulk`.
+
+**Shared primitives (`engine/placement-checks.ts`):** the older, still-live module holding `isTwenty`, `teuOf`, `sizeFitsBay`, `tierBelow`, `plugOk`. Both the predicates above and the new `lib/unplaced-query.ts` import from it, which is what keeps the size/parity notion identical across the drop gate and the list filter.
 
 **React Query:** the provider is still mounted in `main.tsx`, but no query loads plan data any more — the demo plan is built in the frontend and loaded into the draft store. `api/client.ts` currently has no importers; `POST /api/validate` / `/api/stowage/solve` remain the backend contract.
 
@@ -491,7 +597,7 @@ Gesture state (`hoveredSlot`, `draggingContainerId`, `pickedId`) is view state a
    - WaterlineReference mesh updates with attitude
    - **Angles exaggerated 5× for visibility (toggle via `exaggerate` state)**
 2. Render hull: Parametric L1 (phase 2: `engine/hull/` modules) or GLTF model (L2, phase 4)
-3. Render ContainerInstances (InstancedMesh per size; filtered by `playbackCount` state for loading sequence) — plus, while a container is in hand, `SlotPlaceholders` (valid slots) and `GhostContainerPreview` (the cursor box)
+3. Render ContainerInstances (**one** `instancedMesh` for all sizes — per-instance `LENGTH_BY_SIZE` matrix scale; filtered by `playbackCount` state for loading sequence) — plus, while a container is in hand, `SlotPlaceholders` (valid slots) and `GhostContainerPreview` (the cursor box)
 4. Render BreakbulkCargoInstances (custom mesh per cargo; deck-positioned by x/z footprint + rotation; filtered by playback)
 5. OrbitControls + GizmoHelper for navigation
 6. Raycast on InstancedMesh for selection
@@ -513,15 +619,25 @@ Gesture state (`hoveredSlot`, `draggingContainerId`, `pickedId`) is view state a
 - Perf achieved: hull + components = 3 draw calls total (vs. 12 budget), ≤8800 triangles
 
 **Container rendering:**
-- Group placements by container size (20', 40', 45' + high cube)
-- Each size rendered at correct length (via instance scale)
-- One InstancedMesh per size → 1–2 draw calls total (vs. 10k+)
-- Each instance stores: position (bay/row/tier → x/y/z), color (POD/weight/type), selected state
+- All sizes share ONE `instancedMesh` — placements are never grouped by size
+- Each instance's own matrix scale (`LENGTH_BY_SIZE`) renders its length correctly
+- One draw call total for every container (vs. 10k+)
+- Each instance stores: position (bay/row/tier → x/y/z), color (`colorMode` × `paletteMode` — the default and the colourblind-safe ramp), selected state
 
-**Drop affordances (Phases A–C):**
-- `SlotPlaceholders.tsx`: one InstancedMesh of translucent boxes on every valid slot while a container is dragged or picked, built from `validSlotsFor` (memoised) — a hint layer, `raycast={() => null}`, so it never steals the pick
-- `GhostContainerPreview.tsx`: the box that follows the cursor, tinted from `DROP_TINT` (green clean / amber accepted-and-recorded / red refused); the tint and the sidebar reason both come from `lib/drop-verdict.ts`, i.e. from the same `canPlaceContainer` gate the commit runs
+**Drop affordances (supersedes the earlier "Phases A–C"):**
+- `SlotPlaceholders.tsx`: one InstancedMesh of translucent boxes on every valid slot while a container is dragged or picked, built from `validSlotsFor` (memoised, one sweep per gesture start) — a hint layer, `raycast={() => null}`, so it never steals the pick
+- `GhostContainerPreview.tsx`: the box that follows the cursor, tinted from `DROP_TINT` (green clean / amber accepted-and-recorded / red refused); the tint comes from `verdictForSlot`, the same `canPlaceContainer` gate the commit runs
+- `DropVerdictChip.tsx` + `use-drop-cursor.ts`: the at-cursor sentence and the viewport cursor/armed ring
 - Starting a drag pauses playback (D3) and clears any pick; the two gestures are mutually exclusive
+
+See **End-to-end drop flow** above for the full chain and the wording contract.
+
+**Bulk retrieval over the Unplaced list (P2):**
+- `lib/unplaced-query.ts` — pure, view-free list logic: `queryUnplacedRows`, `unplacedHeaderLabel`, `nextRowIndex`, plus the `SizeFilter` / `TypeFilter` / `UnplacedSort` / `UnplacedGroupBy` types and `DEFAULT_UNPLACED_QUERY`. Worst case ≈39 ms.
+- `features/panels/UnplacedListControls.tsx` — presentation only.
+- `features/panels/UnplacedCargoList.tsx` — search box, size filter, type filter, sort (cargo order / POD rotation / weight heavy-first / id), grouping (none / POD / type / size, collapsible with per-group counts), ArrowUp/Down/Home/End roving focus, and a "Fits bay NN" toggle. List height 140 px → 320 px; the header becomes `Unplaced (n of N)` when filtered; an empty result shows "No container matches." plus a Clear filters action.
+
+> **Decision D6 — "Fits bay NN" is a RENDERING-ONLY filter.** It is worded as a size/parity claim only (`BAY_CAVEAT = "Size and parity only — the slot still has to pass every check."`) and **must never gate a drop**. `commitPlacement → canPlaceContainer` remains the only gate. An exact-predicate variant was measured at ≈11.2k `canPlaceContainer` calls ≈ 39 ms per recompute and was **rejected**.
 
 **Breakbulk cargo rendering:**
 - Each breakbulk cargo rendered as custom mesh (wind turbine blade/nacelle/tower, yacht, etc.)
@@ -543,6 +659,7 @@ Units: meters; 20' = 6.058m, 40' = 12.192m, container width = 2.438m, height = 2
 - Get instanceId → lookup container → update usePlanStore.selectedId
 - Sidebar highlights violations for selected container
 - An empty slot under the cursor resolves to `hoveredSlot` and (with a container in hand) is the drop target: the same click commits it via `commitPlacement` — the trigger used by the WCAG 2.5.7 click-to-pick path
+- **Slot resolution does NOT use three.js hit order.** `features/viewer3d/EmptySlotPicker.tsx` calls `cursorOnTierPlane` then `nearestSlotIndex` from `lib/nearest-slot.ts`: the cursor ray is intersected with the candidate tier's plane, and the candidate whose **centre** is nearest (squared 3D distance, ties → lowest index) wins. Resolution is restricted to the candidate set, so an unrelated slot can never win by being nearer to the camera.
 
 ## Indicative Stability & Ship Attitude (**DEMO DATA ONLY**)
 
@@ -609,6 +726,8 @@ Slot(bay=02, row=00, tier=82)
 
 **Placement footprints (`x_m`):** `BreakbulkPlacement.x_m` is symmetric about `length_m / 2` (0 at the stern end, +bow) and is deliberately NOT the AP-referenced ship frame. The conversion to scene x is a pure translation, owned solely by `frontend/src/engine/stowage-model/coords.ts` (`placementXToSceneX` / `sceneXToPlacementX`); never re-derive the offset in a producer or consumer. Slot footprints likewise come from the stowage model's `SlotDef.rect`, not from a local re-derivation.
 
+**`frontend/src/engine/stowage-model/` — the single source of truth for areas and slots:** `index.ts` (public barrel re-exporting `types`, `coords`, `build-stowage-model`, `occupancy`), `types.ts` (`StowageModel`, `SlotDef`, `AreaDef`), `build-stowage-model.ts` (`buildStowageModel(vessel)` — the constructor the predicates call), `occupancy.ts` (which slots are taken by which container), `coords.ts` (the only owner of the x-offset conversion), and `slot-enumeration.ts` (slot enumeration — **not re-exported by the barrel**, import it by path).
+
 ## Deployment Architecture (Local & Docker)
 
 ### Local Development
@@ -654,11 +773,11 @@ Services:
 
 | Metric | Target | Current |
 |--------|--------|---------|
-| 3D render | 20k containers @ 60fps | ✓ InstancedMesh per size |
+| 3D render | 20k containers @ 60fps | ✓ One `instancedMesh`; **not benchmarked at 20k** |
 | Validation | <100ms per check | ✓ Linear scan rules |
 | Greedy solver | <10s for 2000 containers | ○ Basic implementation |
-| CP-SAT solver | <60s per bay group | ○ Phase 4 |
-| API latency | <100ms (p95) | ✓ Typical |
+| CP-SAT solver | <60s per bay group | ○ Phase 4 (stub) |
+| API latency | <100ms (p95) | — unmeasured; the UI issues no requests |
 
 ## Security Considerations
 

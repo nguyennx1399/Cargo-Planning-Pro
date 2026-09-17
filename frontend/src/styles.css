@@ -170,7 +170,29 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 
 .sidebar footer { margin-top: auto; }
 
-.unplaced-list { display: flex; flex-wrap: wrap; gap: 4px; max-height: 140px; overflow-y: auto; }
+/* The Unplaced section's retrieval chrome (P2). On MV Demo Horizon this list is 400 chips — ~2400 px
+   of content — so the scroller is 320 px (was 140) and every row is reachable by search, filter,
+   sort or grouping instead of by scrolling. No virtualisation: 400 buttons is not the bottleneck,
+   retrieval is (the sidebar itself already scrolls, so the extra height costs nothing). */
+.unplaced-controls { display: grid; gap: 6px; margin-bottom: 8px; }
+.unplaced-search { font-size: 12px; }
+.unplaced-list { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+.unplaced-group { display: flex; flex-direction: column; gap: 4px; }
+.unplaced-rows { display: flex; flex-wrap: wrap; gap: 4px; }
+/* Sticky inside the scroller: at 400 rows, which group you are in is the first thing you lose. */
+.unplaced-groupheader {
+  position: sticky; top: 0; z-index: 1;
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  font-family: inherit; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ink-soft); background: var(--panel);
+  border: 0; border-bottom: 1px solid var(--line); padding: 2px 0; cursor: pointer;
+}
+.unplaced-groupcount { font-variant-numeric: tabular-nums; }
+.unplaced-nomatch { margin: 0; }
+/* The bay-fit badge: the size/parity claim stated ON each row rather than implied by the filter
+   hiding things. Muted for "no fit" — a box that cannot go in THIS bay is not an error. */
+.unplaced-fit { margin-left: 4px; font-size: 10px; color: var(--ok); }
+.unplaced-nofit { color: var(--ink-soft); text-decoration: line-through; }
 .unplaced-item {
   font-family: inherit; font-size: 11px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 3px;
   background: #fff; color: inherit; cursor: grab; user-select: none;
@@ -183,6 +205,38 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
    and recorded (the checks list will name it), red = refused. */
 .warn { color: var(--signal); }
 .error { color: var(--error); }
+
+/* The at-cursor drop verdict (P1). Fixed, because its transform carries raw clientX/clientY from a
+   window pointermove listener — no layout read and no re-render per move. `pointer-events: none` so a
+   chip that follows the cursor can never swallow the click on the slot it describes. The tone class
+   (`.ok`/`.warn`/`.error`, applied by `drop-feedback.ts`) colours the text; the border carries the
+   same token so a refusal reads red even out of the corner of the eye. */
+.drop-chip {
+  position: fixed; top: 0; left: 0; z-index: 20;
+  max-width: 340px; padding: 5px 8px;
+  border: 1px solid var(--line); border-left-width: 3px; border-radius: 4px;
+  background: var(--panel); font-size: 12px; line-height: 1.35;
+  box-shadow: 0 1px 4px rgb(29 43 54 / 18%);
+  pointer-events: none;
+}
+.drop-chip p { margin: 0; }
+/* Fixed colour, so the tone colours only the sentence and not the slot code above it. */
+.drop-chip-headline { color: var(--ink-soft); }
+/* Long rule messages are clipped rather than allowed to grow a box over the slot being aimed at. */
+.drop-chip-detail { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.drop-chip.ok { border-left-color: var(--ok); }
+.drop-chip.warn { border-left-color: var(--signal); }
+.drop-chip.error { border-left-color: var(--error); }
+
+/* "A box is in hand" — the ring while a pick or a drag is armed. Drawn as a pseudo-element, not as a
+   box-shadow on `.viewport` itself: an inset shadow on the wrapper is painted UNDER its content, and
+   the R3F container div covers the whole padding box, so the ring would be invisible. A positioned
+   `::after` is the last child and therefore paints above the canvas (both are positioned, z-index
+   auto, so tree order decides). */
+.viewport-armed::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--ok);
+}
 
 .bayplan-placeholder { display: grid; gap: 4px; }
 

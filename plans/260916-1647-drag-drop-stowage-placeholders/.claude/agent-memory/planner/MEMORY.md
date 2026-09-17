@@ -1,0 +1,2 @@
+- [Verification reality — no DOM tests, extend the acceptance script](feedback-verification-reality.md) — classify every change as pure-logic / typecheck-only / human-click-through
+- [Stowage reconciled baselines](project-stowage-reconciled-baselines.md) — 199/36 violations, 400/886 unplaced, 1520 not 2400, 0.402 m not 0.18 m

@@ -6,8 +6,8 @@
  *
  *     useStowageKeyboardShortcuts();
  *
- * Reconciliation with the `ArrowLeft`/`ArrowRight` bay navigation in `Sidebar.tsx:62-72`: this hook
- * deliberately does NOT handle arrows, and Sidebar's handler already returns early on
+ * Reconciliation with the `ArrowLeft`/`ArrowRight` bay navigation (the effect in `Sidebar.tsx`): this
+ * hook deliberately does NOT handle arrows, and Sidebar's handler already returns early on
  * ctrl/meta/alt. The two handler sets are therefore disjoint, so no keypress can be acted on twice
  * (two global handlers both advancing the bay filter on one arrow press is the bug this avoids). If
  * the arrow navigation is ever moved here, delete that effect in the same change.
@@ -19,8 +19,10 @@ import { useEffect } from "react";
 import { cancelPlacement } from "@/store/commit-placement";
 import { usePlanDraftStore } from "@/store/usePlanDraftStore";
 
-/** The same guard Sidebar's bay-nav handler uses: never hijack keystrokes aimed at a text field
- * (undo/redo in particular must stay the input's own if one is ever added). */
+/** The same guard Sidebar's bay-nav handler uses: never hijack keystrokes aimed at a text field.
+ * The Unplaced search box (P2) is that text field, and it is why the guard is now load-bearing rather
+ * than defensive — Esc in the box must not cancel an armed pick, and Ctrl+Z in the box must stay the
+ * field's own undo, not the plan's. */
 const isTypingTarget = (target: EventTarget | null): boolean => {
   const tag = (target as HTMLElement | null)?.tagName;
   return tag === "INPUT" || tag === "TEXTAREA";

@@ -18,10 +18,11 @@
 │    (draft/trim/heel/ │      - Orbit controls          │
 │    GM indicators)    │      - Gizmo helper            │
 │  - Color by / Show   │      - Slot placeholders       │
-│  - Container         │        + drop ghost            │
-│  - Unplaced          │                                │
-│  - Loading sequence  │      (Ship attitude/sinking    │
-│  - Checks            │       driven by visible cargo) │
+│  - Container         │        + drop ghost + at-      │
+│  - Unplaced          │        cursor verdict chip     │
+│  - Loading sequence  │                                │
+│  - Checks            │      (Ship attitude/sinking    │
+│                      │       driven by visible cargo) │
 │                      │                                │
 ├──────────────────────┴────────────────────────────────┤
 │                2D Bay Plan (CSS grid)                 │
@@ -71,26 +72,26 @@
 | Signal / accepted-with-warnings | `--signal` | #E0A030 |
 | Error / refused | `--error` | #B83A2E |
 
-The same hexes are mirrored in `lib/colors.ts` (`HIGHLIGHT.valid|warning|invalid`, `DROP_TINT`) so the canvas and the panels agree.
+The same hexes are mirrored in `lib/colors.ts` as `HIGHLIGHT.valid|warning|invalid` (alongside
+`HIGHLIGHT.hover|selected`) so the canvas and the panels agree. `DROP_TINT` — the map from a slot
+verdict to one of those three — lives in `lib/drop-verdict.ts`, not in `colors.ts`. `colors.ts` exports
+only `podColorMap`, `containerColor` and `HIGHLIGHT`.
 
-**Color modes (container coloring):**
+**Color modes (container coloring)** — the three that exist (`ColorMode = "pod" | "weight" | "type"`), all in `lib/colors.ts`:
 
 1. **POD (Port of Discharge)** — Color by destination port
-   - Unique hue per port
+   - Fixed 6-colour palette, assigned in port-rotation order (`sequence`), wrapping past 6 ports
+   - A colourblind-safe palette (Okabe & Ito 2008) is selectable (`paletteMode`) because the default red-orange vs green pair is a red-green confusion risk
    - Planners see discharge order at a glance
-   - Example: Singapore = blue, Colombo = green, Port Klang = orange
 
-2. **Weight** — Gradient from light to dark
-   - Light = empty (4–8 tonnes)
-   - Dark = heavy (25–30 tonnes)
+2. **Weight** — One continuous ramp, `hsl(210, 35%, L%)` with L from 82% (light) down to 32% (dark), clamped at 0–30 t
+   - Light = low tonnage, dark = heavy
    - Planners see weight distribution for balance
 
-3. **Type** — Symbol/color by container type
-   - Dry (standard) = blue
-   - Reefer = cyan (with plug indicator)
-   - OPEN_TOP = yellow
-   - IMDG = red
-   - OOG = purple outline
+3. **Type** — Flat colour per type, with IMDG overriding
+   - Dry (standard) `#9AA5B1` · Reefer `#3A86C8` · OPEN_TOP `#B08D57` · FLAT_RACK `#8C6E54` · TANK `#6C8E5B`
+   - Any container with an `imdg_class` renders `#D64545` regardless of type
+   - Not yet built: a reefer "plug indicator" and a purple OOG outline (OOG is not represented in the viewer at all)
 
 **Violation highlighting (in sidebar "Checks"):**
 
@@ -121,7 +122,7 @@ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
 ### Sidebar
 
-**Width:** 320px (fixed on left)
+**Width:** 300px (fixed on left — `grid-template-columns: 300px 1fr` in `styles.css`)
 
 **Sections** (in rendered order):
 
@@ -162,6 +163,32 @@ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 9. **Unplaced (n)**
    - The drag source AND the single-pointer entry point: mousedown drags, click (or Enter/Space on the focused row) picks
    - Lists what the current plan has not placed
+   - **Bulk retrieval (P2)** — the section carries a control bar above the list, all of it driven by the
+     pure `lib/unplaced-query.ts` + the presentation-only `UnplacedListControls.tsx`:
+     | Control | Values | Notes |
+     |---|---|---|
+     | Search | free text | matches container id; the app's first text input |
+     | Size | any / 20' / 40' / 45' | |
+     | Type | any / DRY / REEFER / OPEN_TOP / FLAT_RACK / TANK | |
+     | Sort | cargo order / POD rotation / weight heavy-first / id | |
+     | Group | none / POD / type / size | collapsible headers, per-group count on the right, `aria-expanded` |
+     | "Fits bay NN" | on/off | see below |
+   - **"Fits bay NN" is a rendering-only filter** (decision D6). It hides rows whose *size and parity*
+     cannot take a position in the bay the Show section selected, and it is worded that way: its
+     tooltip reads `BAY_CAVEAT` = "Size and parity only — the slot still has to pass every check."
+     Each row also carries a per-row `fits NN` badge. It **never** gates a drop —
+     `commitPlacement → canPlaceContainer` remains the only gate, so the filter can only change what is
+     listed, not what may be placed. The exact-predicate variant was measured at ≈11.2k
+     `canPlaceContainer` calls ≈ 39 ms per recompute and rejected.
+   - The header reads `Unplaced (n)` when nothing is filtered and `Unplaced (n of N)` when something
+     is; an empty result renders "No container matches." with a **Clear filters** action rather than an
+     empty box. `DEFAULT_UNPLACED_QUERY` reproduces the pre-P2 rendering exactly, so BBC still reads
+     `Unplaced (20)`.
+   - Keyboard: ArrowUp/Down walk the *rendered* rows, Home/End jump to the ends, and a group header
+     participates (ArrowDown enters its first row). The list window is 320 px tall (was 140 px) —
+     MV Demo Horizon holds 400 unplaced rows, and roughly twice as many chips are visible at once.
+   - **Status:** implemented 2026-09-16, unit-tested, **uncommitted and not browser-verified** (no DOM
+     test environment). Acceptance steps 29–34 of the manual click-through are outstanding.
 
 10. **Checks**
    - KPI row: Placed / Not placed / Overstows / Rule errors
@@ -193,7 +220,10 @@ Footer: "Planning aid only. Verify stability on the approved loading computer."
 - Press a container and drag past a small threshold → MOVE it (the camera must not rotate); release over a valid slot
 - Hover container → tooltip with ID, size, weight, POD (future)
 - Drag a row in the Unplaced list (or click it once to PICK it — the single-pointer path) → translucent boxes mark every valid slot and a ghost follows the cursor
-- Drop tint is one verdict (`lib/drop-verdict.ts`): **green** = clean, **amber** = accepted but recorded (the checks list will show it), **red** = refused (release places nothing). Wording lives in the sidebar, not on the mesh
+- Drop tint is one verdict (`lib/drop-verdict.ts`): **green** = clean, **amber** = accepted but recorded (the checks list will show it), **red** = refused (release places nothing)
+- **The wording is `lib/drop-feedback.ts`** (P1/D4) — one function per sentence, rendered by the at-cursor chip, the Container inspector and the 2D bay-plan notice alike, so no two surfaces can disagree about the same result. A clean drop says nothing at all; a recorded one reads "Placed. Recorded, not blocked — the checks below will list it: `<reason>`" in amber; a refusal reads "Not placed — `<reason>`" in red. A refused PICK stays armed; a refused DRAG is cleared.
+- The outcome of the last committed drop is kept in `usePlanStore.dropOutcome` (P1/D5, written only by `commit-placement.ts`), so the message survives the pointer leaving the slot, and clears on the next gesture or on `setHoveredSlot` going stale
+- Pointer affordances (`use-drop-cursor.ts`, truth table first-match-wins): open hand (`cursor-grab`) over a placed container with nothing in hand — what makes the ≤4 px select / >4 px move threshold discoverable *before* the gesture; closed hand (`cursor-grabbing`) while dragging; `cursor-pointer` over a slot a release would land on; `cursor-not-allowed` over a refused slot; `cursor-crosshair` over water/hull with a box in hand. A 2 px ring (`viewport-armed`) rides the viewport edge while a box is in hand
 - Esc cancels a drag or pick; Ctrl/Cmd+Z undo, Shift+Ctrl/Cmd+Z (or Ctrl+Y) redo
 - Right-click is reserved for OrbitControls' pan — the move/swap context menu is deferred to Phase D
 
@@ -225,14 +255,19 @@ Footer: "Planning aid only. Verify stability on the approved loading computer."
 
 ## Accessibility (A11y)
 
-**Current (skeleton): Basic** — plus the editor's WCAG 2.5.7 single-pointer path (click to pick, then click a target — no drag gesture) and the Esc / undo / redo keys. Unplaced rows are real `<button>`s, so Tab + Enter/Space picks.
+**Current (better than "basic" in the editor)** — the editor's WCAG 2.5.7 single-pointer path (click to pick, then click a target — no drag gesture) and the Esc / undo / redo keys. Unplaced rows are real `<button>`s, so Tab + Enter/Space picks. The P2 list adds real ArrowUp/Down/Home/End roving focus over the rendered rows, `aria-expanded` on group headers and `aria-pressed` on a picked row.
+
+**Load-bearing keyboard guard:** `panels/use-stowage-keyboard-shortcuts.ts` returns early when the event target is an `INPUT` or `TEXTAREA`. Without it the P2 search box would hijack the global keys — **Esc in the box would cancel an armed pick** and ArrowLeft/ArrowRight would page the bay filter while the caret moved. Any new text input inherits this protection for free; any new global key handler must respect it.
+
+**Status note:** every interaction listed above is **unit-tested only.** No DOM test environment exists (`environment: 'node'`; jsdom/testing-library deliberately not installed), so none of it has been machine-verified in a browser. The manual click-through script (`plans/reports/manual-click-through-260916-phase-c.md`, steps 22–34) is outstanding for the P1/P2 work.
 
 **To do (phase 2+):**
-- [ ] ARIA labels on interactive elements
-- [ ] Full keyboard navigation (Tab, Enter, Arrow keys) — arrow-key nudging of a placement is not implemented
+- [ ] ARIA labels on interactive elements broadly (the editor's Unplaced rows, group headers and picked state are covered; the rest is not)
+- [x] Full keyboard navigation for the Unplaced list (Tab, Enter/Space, ArrowUp/Down/Home/End)
+- [ ] Keyboard navigation for the 3D/bay-plan surface — arrow-key nudging of a placement is not implemented
 - [ ] Color contrast ratios (WCAG AA minimum 4.5:1)
 - [ ] Screen reader testing (NVDA, JAWS)
-- [ ] Focus indicators visible (:focus-visible)
+- [x] Focus indicators visible (:focus-visible, 2 px `--signal` outline in `styles.css`)
 - [ ] Alt text for images/icons
 
 ## Animation & Interaction
@@ -242,10 +277,13 @@ Footer: "Planning aid only. Verify stability on the approved loading computer."
 - Smooth transition (0.2s) to avoid jank
 - Deselect by clicking empty space
 
-**Drop feedback (shipped):**
-- Translucent placeholders on every valid slot while a container is in hand (one InstancedMesh)
+**Drop feedback (committed 2026-09-16; P1 additions uncommitted and not browser-verified):**
+- Translucent placeholders on every valid slot while a container is in hand (one InstancedMesh, `raycast={() => null}`)
 - Ghost follows the cursor, tinted green (clean) / amber (accepted, recorded) / red (refused)
 - Tint and reason text come from a single verdict object, so they can never disagree
+- **P1:** an at-cursor verdict chip (`DropVerdictChip.tsx`) shows the same sentence next to the pointer — headline "Slot `<code>` — placing `<id>`", detail the verdict. It is `aria-hidden` on purpose: the accessible copy stays in the Container inspector, so pointer movement cannot flood an `aria-live` region
+- **P1:** the committed outcome stays on screen after the drop (`dropOutcome`), so "Placed / Not placed" is still readable once the pointer has left the slot; a 2D bay-plan drop renders its notice in the panel instead of at the cursor
+- **P1:** the `.viewport` cursor itself carries the affordance (`use-drop-cursor.ts`), plus a 2 px ring (`viewport-armed`) while a box is in hand
 
 **Sidebar transitions:**
 - Slide open/close for future drawer mode (phase 2)
@@ -278,7 +316,7 @@ Footer: "Planning aid only. Verify stability on the approved loading computer."
 body { font-family: ...; font-size: 14px; line-height: 1.5; color: #333; }
 
 /* Layout */
-.layout { display: grid; grid-template-columns: 320px 1fr; height: 100vh; }
+.layout { display: grid; grid-template-columns: 300px 1fr; height: 100vh; }
 .sidebar { overflow-y: auto; border-right: 1px solid #e0e0e0; background: #f9f9f9; }
 .stage { display: grid; grid-template-rows: 1fr 200px; grid-template-columns: 1fr 1fr; }
 .viewport { overflow: hidden; background: #DCE3E9; }
@@ -335,7 +373,7 @@ Or: Use Heroicons or Feather icon library for consistency.
 **Rendering:**
 - Use CSS Grid/Flexbox (fast layouts)
 - Avoid CSS animations on containers (use transform instead)
-- InstancedMesh in 3D (one draw call per size)
+- InstancedMesh in 3D (one draw call for every container, all sizes in the same mesh)
 
 **State:**
 - Zustand selectors for granular updates (avoid full re-renders)
@@ -353,3 +391,6 @@ Or: Use Heroicons or Feather icon library for consistency.
 3. **Icon library:** Emoji, Heroicons, or custom SVGs?
 4. **Accessibility level:** WCAG A, AA, or AAA target?
 5. **Drag-and-drop:** Resolved — mouse drag AND a single-pointer click-to-pick path (WCAG 2.5.7) both ship in the Phase 2 editor, sharing one commit resolver. Keyboard-only reordering (arrow-key nudging) is not implemented.
+6. **Drop wordings:** Resolved — `lib/drop-feedback.ts` is the single source (`lib/drop-verdict.ts` keeps the tint only). The at-cursor chip is deliberately `aria-hidden`; whether a future DOM test environment should assert the chip's text or the inspector's is open.
+7. **"Fits bay NN" strength:** Resolved as a rendering-only size/parity filter (D6). The exact-predicate variant stays a recorded follow-up with its measurement (≈39 ms per recompute at ≈11.2k `canPlaceContainer` calls).
+8. **Should the frontend call the API?** Open and consequential — the app is entirely client-side today, so the backend's validator, greedy solver and 5 endpoints have no consumer. Wiring them (or deleting them) is not yet scheduled.

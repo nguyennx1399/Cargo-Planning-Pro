@@ -1,7 +1,18 @@
 import { create } from "zustand";
 import type { Slot } from "@/types/domain";
+import type { DropOutcome } from "@/lib/drop-feedback";
 
 export type ColorMode = "pod" | "weight" | "type";
+
+/** The model's authoritative slot key (`SlotDef.key`), used ONLY to answer "is this the same slot a
+ * drop outcome is about?". */
+const slotKey = (s: Slot): string => `${s.bay}|${s.row}|${s.tier}`;
+
+/** True when hovering `next` makes the last drop outcome stale: a DIFFERENT slot was entered, so the
+ * planner has moved on (review M6). Entering the outcome's OWN slot does not clear it — its hover
+ * text is byte-identical to the outcome's (`drop-feedback.ts`), so clearing would flicker the line. */
+const staleOutcome = (outcome: DropOutcome | null, next: Slot | null): boolean =>
+  outcome !== null && next !== null && slotKey(next) !== slotKey(outcome.slot);
 export type PaletteMode = "default" | "colorblind";
 
 interface ViewState {
@@ -25,6 +36,12 @@ interface ViewState {
    * Unplaced list (or focus it and press Enter) — no drag gesture — then click a placeholder in 3D
    * or a bay cell in 2D to place it. Esc clears it. Shares one commit resolver with the drag path. */
   pickedId: string | null;
+  /** The outcome of the LAST committed drop — refused, or accepted with a reason the plan-wide checks
+   * will list — kept after the gesture it ended, because a refused DRAG is cleared by the resolver and
+   * there would be nothing left to attach the message to (P1/D5; review M2/M3/M6). Written by
+   * `store/commit-placement.ts` only; the full lifetime table lives in its header. In short: a new
+   * gesture clears it, a DIFFERENT slot hovered clears it, and everything else leaves it alone. */
+  dropOutcome: DropOutcome | null;
   exaggerate: number; // multiplier on list/trim angle, for visibility — real angles are tiny
   playbackCount: number | null; // null = show everything immediately; a number = playback in progress
   playbackPlaying: boolean;
@@ -40,6 +57,7 @@ interface ViewState {
   setHoveredSlot: (slot: Slot | null) => void;
   setDraggingContainer: (id: string | null) => void;
   setPicked: (id: string | null) => void;
+  setDropOutcome: (outcome: DropOutcome | null) => void;
   toggleExaggerate: () => void;
   startOrResumePlayback: () => void;
   pausePlayback: () => void;
@@ -69,6 +87,7 @@ export const usePlanStore = create<ViewState>((set) => ({
   hoveredSlot: null,
   draggingContainerId: null,
   pickedId: null,
+  dropOutcome: null,
   exaggerate: 1,
   playbackCount: null,
   playbackPlaying: false,
@@ -81,7 +100,14 @@ export const usePlanStore = create<ViewState>((set) => ({
   setBayFilter: (bayFilter) => set({ bayFilter }),
   setHovered: (hoveredId) => set({ hoveredId }),
   setSelected: (selectedId) => set({ selectedId }),
-  setHoveredSlot: (hoveredSlot) => set({ hoveredSlot }),
+  // Hovering a DIFFERENT slot also retires the last drop outcome (review M6: no stale "Not placed —
+  // …" sitting there while the planner inspects something else). `setHoveredSlot(null)` deliberately
+  // does NOT: leaving the canvas must not wipe the message before it has been read.
+  setHoveredSlot: (hoveredSlot) =>
+    set((s) => ({
+      hoveredSlot,
+      dropOutcome: staleOutcome(s.dropOutcome, hoveredSlot) ? null : s.dropOutcome,
+    })),
   // Starting either gesture ends the other one: one item is being placed at a time, and the
   // placeholder set / ghost must have a single source (Phase C risk table).
   // A drag start also pauses playback (D3): the dragged box's current placement is hidden while
@@ -91,14 +117,21 @@ export const usePlanStore = create<ViewState>((set) => ({
   // changes and R3F drops the unmounted object's hover record WITHOUT firing `onPointerOut`, so a
   // pre-gesture slot would survive into the next gesture and be committed by a click that only meant
   // to pick. A gesture's target must be established under that gesture's pointer.
+  // A gesture start also retires the previous drop outcome (P1 lifetime table): it belongs to the
+  // gesture that just ended, and the new one has not produced anything to say yet.
   setDraggingContainer: (draggingContainerId) =>
     set(
       draggingContainerId === null
         ? { draggingContainerId: null }
-        : { draggingContainerId, pickedId: null, hoveredSlot: null, playbackPlaying: false },
+        : { draggingContainerId, pickedId: null, hoveredSlot: null, dropOutcome: null, playbackPlaying: false },
     ),
   setPicked: (pickedId) =>
-    set(pickedId === null ? { pickedId: null } : { pickedId, draggingContainerId: null, hoveredSlot: null }),
+    set(
+      pickedId === null
+        ? { pickedId: null }
+        : { pickedId, draggingContainerId: null, hoveredSlot: null, dropOutcome: null },
+    ),
+  setDropOutcome: (dropOutcome) => set({ dropOutcome }),
   toggleExaggerate: () =>
     set((s) => ({ exaggerate: s.exaggerate === 1 ? 5 : 1 })),
   startOrResumePlayback: () =>
@@ -124,6 +157,7 @@ export const usePlanStore = create<ViewState>((set) => ({
       hoveredSlot: null,
       draggingContainerId: null,
       pickedId: null,
+      dropOutcome: null,
       playbackCount: null,
       playbackPlaying: false,
     }),

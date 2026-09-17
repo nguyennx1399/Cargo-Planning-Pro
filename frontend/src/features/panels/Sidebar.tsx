@@ -1,9 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import type { StowagePlan, ValidationReport, Vessel } from "@/types/domain";
 import type { StabilityResult } from "@/engine/stability-indicative";
-import type { Reason } from "@/engine/placement/reason";
 import { useShallow } from "zustand/react/shallow";
-import { activeContainerId, usePlanStore } from "@/store/usePlanStore";
+import { usePlanStore } from "@/store/usePlanStore";
 import { cancelPlacement, commitPlacement } from "@/store/commit-placement";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -48,20 +47,14 @@ export function Sidebar({
       setSelected: state.setSelected,
     }))
   );
-  const activeId = usePlanStore(activeContainerId);
-  // The drop OUTCOME that arrived through the release path, kept after the gesture it ended (a
-  // rejected DRAG is cleared by the resolver, so there is no gesture left to attach the message to).
-  // `rejected: false` is the amber case: the drop LANDED and the checks list will name it (D1,
-  // review M3) — it must not read like the refusal beside it.
-  const [releaseNotice, setReleaseNotice] = useState<{ reason: Reason; rejected: boolean } | null>(null);
-
   const bayIndex = s.bayFilter === null ? -1 : vessel.bays.indexOf(s.bayFilter);
   const gotoBay = (delta: number) => {
     const next = bayIndex === -1 ? (delta > 0 ? 0 : vessel.bays.length - 1) : bayIndex + delta;
     if (next >= 0 && next < vessel.bays.length) s.setBayFilter(vessel.bays[next]);
   };
-  // Arrow-key bay navigation — Sidebar only mounts in demo mode (no text inputs there), but guard
-  // against a focused input/textarea anyway so this can't hijack typing if that ever changes.
+  // Arrow-key bay navigation. The INPUT/TEXTAREA guard below is load-bearing, not a precaution: the
+  // Unplaced section's search field (P2) is the app's first text input, and typing an id must never
+  // walk the bay filter out from under the caret. The Esc/undo handler is guarded the same way.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.altKey || e.ctrlKey || e.metaKey) return;
@@ -80,6 +73,8 @@ export function Sidebar({
   useEffect(() => {
     if (!s.draggingContainerId) return;
     const onMouseUp = (e: MouseEvent) => {
+      // PRIMARY BUTTON ONLY (P1/Low): a right/middle release is not the button that armed the drag.
+      if (e.button !== 0) return;
       // Only a release OVER THE CANVAS may commit. `hoveredSlot` is a raycast result, and the picker
       // mesh remounts (R3F drops an unmounted object's hover record without firing `onPointerOut`)
       // whenever its pickable count changes — so without this gate a release over the sidebar or the
@@ -87,27 +82,26 @@ export function Sidebar({
       // which is the same outcome the window listener exists to produce for an off-canvas release.
       const overCanvas = e.target instanceof Element && e.target.closest("canvas") !== null;
       // `getState()`, not the closure: the listener must not be re-registered per pointer move.
-      const result = overCanvas ? commitPlacement(usePlanStore.getState().hoveredSlot) : null;
+      const result = overCanvas ? commitPlacement(usePlanStore.getState().hoveredSlot, "scene") : null;
       // `null` = nothing to commit (no target under the pointer), and the resolver deliberately
       // leaves the drag open in that case — so the cancel below is what stops a release outside the
       // canvas from leaving the gesture stuck.
-      if (!result) {
-        cancelPlacement();
-        return;
-      }
-      // Hard block (D1) → refused, the first blocking reason. Overridable limit → APPLIED and
-      // RECORDED (amber), which the planner has to know about (review M3). Clean → nothing to say.
-      const reason = result.reasons[0] ?? null;
-      setReleaseNotice(result.ok ? (reason ? { reason, rejected: false } : null) : reason ? { reason, rejected: true } : null);
+      if (!result) cancelPlacement();
+      // A real commit's outcome is no longer handled here: the resolver records it in the store and
+      // the chip / ContainerInspector / bay plan read it from there (P1/D5, review M3).
     };
+    // A button released OUTSIDE the browser window (or a pointer the OS cancels) never reaches the
+    // `mouseup` above, so the gesture would stay armed until the next click or Esc.
+    const onCancel = () => cancelPlacement();
     window.addEventListener("mouseup", onMouseUp);
-    return () => window.removeEventListener("mouseup", onMouseUp);
+    window.addEventListener("pointercancel", onCancel);
+    window.addEventListener("blur", onCancel);
+    return () => {
+      window.removeEventListener("mouseup", onMouseUp);
+      window.removeEventListener("pointercancel", onCancel);
+      window.removeEventListener("blur", onCancel);
+    };
   }, [s.draggingContainerId]);
-  // A new gesture supersedes the previous notice (cleared on START, not on end: the message has to
-  // outlive the drag the resolver just ended).
-  useEffect(() => {
-    if (activeId) setReleaseNotice(null);
-  }, [activeId]);
 
   return (
     <aside className="sidebar">
@@ -156,7 +150,7 @@ export function Sidebar({
 
       <StabilityPanel attitude={attitude} />
 
-      <ContainerInspector vessel={vessel} plan={plan} releaseNotice={releaseNotice} />
+      <ContainerInspector vessel={vessel} plan={plan} />
 
       <UnplacedCargoList vessel={vessel} plan={plan} />
 

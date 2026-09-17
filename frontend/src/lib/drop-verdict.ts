@@ -44,14 +44,25 @@ export interface SlotViewFilter {
   bayFilter: number | null;
 }
 
+/** Is this slot inside `bay`'s footprint? A 20' half (odd bay) is IN the 40' bay it belongs to —
+ * 21 and 23 are both "in bay 22" — because the 40' parent is the only bay the selectors can name.
+ * Reading membership as `slot.bay === bay` would put every 20' position outside every bay a planner
+ * can pick, i.e. report "nothing fits bay 22" for the entire 20' fleet. The first disjunct is not
+ * redundant with the second: a slot in an even bay the vessel does not list as a 40' bay has no
+ * `bayPosition` at all and is still literally in that bay number. One answer to "which bay is this
+ * slot in", shared by `slotVisible` and the Unplaced list's bay filter (P2). */
+export function slotInBay(slot: Slot, bay: number, vessel: Vessel): boolean {
+  return slot.bay === bay || bayPosition(slot.bay, vessel.bays)?.fortyBay === bay;
+}
+
 /** The visibility rule `ContainerInstances` applies to the cargo, applied to slots: the deck toggles
- * by the slot's own deck, and the bay filter — a half (odd) slot belongs to the filter through its
- * 40' parent, which is the only bay the selector can name. View state only: it never gates a commit
- * (that is `canPlaceContainer`), it decides what is worth picking and drawing. */
+ * by the slot's own deck, and the bay filter by `slotInBay` (a half belongs to its 40' parent).
+ * View state only: it never gates a commit (that is `canPlaceContainer`), it decides what is worth
+ * picking and drawing. */
 export function slotVisible(slot: SlotDef, vessel: Vessel, view: SlotViewFilter): boolean {
   if (slot.deck === "on" ? !view.showOnDeck : !view.showUnderDeck) return false;
   if (view.bayFilter === null) return true;
-  return slot.bay === view.bayFilter || bayPosition(slot.bay, vessel.bays)?.fortyBay === view.bayFilter;
+  return slotInBay(slot, view.bayFilter, vessel);
 }
 
 export interface DropVerdict {

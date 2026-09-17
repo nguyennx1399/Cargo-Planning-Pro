@@ -1,1 +1,3 @@
 - [shadcn/Base UI vendored component gotchas](project_shadcn-base-ui-vendored-component-gotchas.md) — Slider duplicate-thumb bug + lost a11y name; Checkbox+Label sibling pattern verified OK; ToggleGroup role downgrade is inherent
+- [vite-node differential audit](reference_vite-node-differential-audit.md) — prove a src refactor behaviour-preserving via a /tmp script: `cd frontend && npx vite-node /tmp/x.ts` (the `@` alias resolves)
+- [R3F event-system gotchas](project_r3f-event-system-gotchas.md) — unmount kills onPointerOut (stale hover state); stopPropagation flushes farther hover records; OrbitControls enabled guards
