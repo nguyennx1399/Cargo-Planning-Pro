@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Slot } from "@/types/domain";
+import type { BreakbulkCargo, Slot } from "@/types/domain";
 import type { DropOutcome } from "@/lib/drop-feedback";
 import { slotTarget } from "@/lib/drop-feedback";
 import { staleOutcome } from "@/lib/drop-target";
@@ -41,6 +41,19 @@ interface ViewState extends HandFields, HandActions {
    * rather than smuggling the controls instance out through a module-level ref. Starts at 0, which the
    * in-canvas listener treats as "never pressed" so a fresh session keeps its initial camera. */
   viewResetCount: number;
+  /** A keyboard pan request: `seq` bumps per press so two presses in the same direction are two
+   * events, and `dx` carries the direction (-1 left, +1 right). Same "sidebar asks, canvas acts"
+   * pattern as `viewResetCount` — the key handler lives outside the Canvas and cannot touch the
+   * camera. */
+  viewPan: { seq: number; dx: -1 | 1 };
+  /** Project cargo the planner defined by hand. Held HERE rather than in the plan because `App.tsx`
+   * rebuilds the plan on every vessel/toggle change and would destroy them; they are merged back into
+   * each freshly built plan by `withCustomCargo`. Session-scoped: a page reload clears them. */
+  customCargo: BreakbulkCargo[];
+  /** The "Free space" view: draws every empty container cell and shades the ground already taken, with
+   * nothing in hand. Off by default — it is an answer to a question the planner asks, not a default
+   * overlay. */
+  showFreeSpace: boolean;
   setColorMode: (m: ColorMode) => void;
   setPaletteMode: (m: PaletteMode) => void;
   toggleHull: () => void;
@@ -68,6 +81,11 @@ interface ViewState extends HandFields, HandActions {
   /** Put the camera and the orbit target back on the ship — the recovery for `zoomToCursor`, which
    * moves the orbit target as it zooms. Touches nothing but the camera. */
   resetView: () => void;
+  /** Slide the 3D view horizontally by one step. Bound to the arrow keys. */
+  panView: (dx: -1 | 1) => void;
+  toggleFreeSpace: () => void;
+  addCustomCargo: (item: BreakbulkCargo) => void;
+  removeCustomCargo: (id: string) => void;
 }
 
 // UI/view state only. The editable plan (and its undo history) lives in usePlanDraftStore.
@@ -77,6 +95,9 @@ export const usePlanStore = create<ViewState>((set) => ({
   colorMode: "pod",
   paletteMode: "default",
   viewResetCount: 0,
+  viewPan: { seq: 0, dx: 1 },
+  customCargo: [],
+  showFreeSpace: false,
   showHull: true,
   showOnDeck: true,
   showUnderDeck: true,
@@ -128,6 +149,10 @@ export const usePlanStore = create<ViewState>((set) => ({
   // `dropOutcome` are listed explicitly here because `endHand()` deliberately leaves them alone for
   // the Esc/cancel path, and a vessel change must not.
   resetView: () => set((state) => ({ viewResetCount: state.viewResetCount + 1 })),
+  panView: (dx) => set((state) => ({ viewPan: { seq: state.viewPan.seq + 1, dx } })),
+  toggleFreeSpace: () => set((state) => ({ showFreeSpace: !state.showFreeSpace })),
+  addCustomCargo: (item) => set((state) => ({ customCargo: [...state.customCargo, item] })),
+  removeCustomCargo: (id) => set((state) => ({ customCargo: state.customCargo.filter((c) => c.id !== id) })),
   resetForVesselChange: () =>
     set({
       ...endHand(),

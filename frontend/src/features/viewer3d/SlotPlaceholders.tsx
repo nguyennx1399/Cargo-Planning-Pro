@@ -5,6 +5,7 @@ import type { Container, StowagePlan, Vessel } from "@/types/domain";
 import { DIM } from "@/lib/geometry";
 import { DROP_TINT, slotVisible, verdictsForSlots } from "@/lib/drop-verdict";
 import { validSlotsFor } from "@/engine/placement/placeholders";
+import { landingSlotsOnly } from "@/engine/placement/landing-slot";
 import { slotEnvelopes } from "@/lib/slot-envelope";
 import { activeContainerId, usePlanStore } from "@/store/usePlanStore";
 import { AreaRectOutline } from "./area-rect-graphics";
@@ -57,7 +58,13 @@ export function SlotPlaceholders({ vessel, plan }: { vessel: Vessel; plan: Stowa
   // another bay would read as clutter).
   const slots = useMemo(() => {
     if (!container) return [];
-    return validSlotsFor(vessel, plan, container).filter((s) => slotVisible(s, vessel, view));
+    const visible = validSlotsFor(vessel, plan, container).filter((s) => slotVisible(s, vessel, view));
+    // GRAVITY (landing-slot plan, phase 02): the pointer snaps a drop to the lowest free supported tier
+    // of a column, so the other valid tiers of that column are targets the drop will never use. Drawing
+    // them would promise placements that cannot happen — the same "drawn layer disagrees with the
+    // pickable layer" failure this codebase has already paid for twice. A projection of the set above,
+    // not a second sweep.
+    return landingSlotsOnly(vessel, plan, visible);
   }, [vessel, plan, container, view]);
 
   // Tint pass, over the VALID subset only (never per pointer move). `validSlotsFor` cannot separate

@@ -1,5 +1,6 @@
 import type { StowagePlan, Vessel } from "@/types/domain";
 import { Button } from "@/components/ui/button";
+import { CustomCargoForm } from "./CustomCargoForm";
 import { isUnderDeck } from "@/engine/breakbulk-deck-area";
 
 interface Props {
@@ -39,6 +40,7 @@ export function ProjectCargoPanel({ vessel, plan, projectCargoLoaded, onTogglePr
           {vessel.breakbulk_holds?.length ? " — untick Hull to see cargo in the holds." : ""}
         </p>
       )}
+      <CustomCargoForm vessel={vessel} />
     </section>
   );
 }

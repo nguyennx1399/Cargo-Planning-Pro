@@ -49,9 +49,18 @@ export function UnplacedProjectCargoList({ vessel, plan }: { vessel: Vessel; pla
   // The row's own state comes from the ONE hand field, not from the container-shaped projection: a
   // project-cargo item never fills `draggingContainerId`/`pickedId`, so reading those would leave every
   // row looking untouched while one of them is in hand.
-  const { hand, handMode, setHand } = usePlanStore(
-    useShallow((s) => ({ hand: s.inHand, handMode: s.handMode, setHand: s.setHand })),
+  const { hand, handMode, setHand, customCargo, removeCustomCargo } = usePlanStore(
+    useShallow((s) => ({
+      hand: s.inHand,
+      handMode: s.handMode,
+      setHand: s.setHand,
+      customCargo: s.customCargo,
+      removeCustomCargo: s.removeCustomCargo,
+    })),
   );
+  // Only the planner's own items can be removed: the demo set is fixture data, and deleting from it
+  // would desync the list from the plan the demo builder produces on the next rebuild.
+  const customIds = new Set(customCargo.map((c) => c.id));
 
   const rows = useMemo<CargoRow[]>(() => {
     const placed = new Set(plan.breakbulk_placements.map((p) => p.cargo_id));
@@ -126,6 +135,29 @@ export function UnplacedProjectCargoList({ vessel, plan }: { vessel: Vessel; pla
             onClick={() => setHand({ kind: "breakbulk", id: item.id }, "pick")}
           >
             {item.id} · {item.length_m} × {item.width_m} m · {item.weight_t} t
+            {customIds.has(item.id) && (
+              <span
+                role="button"
+                tabIndex={0}
+                aria-label={`Remove ${item.id}`}
+                className="unplaced-remove"
+                // The row itself is a pick/drag source, so this must not reach it — a click meant to
+                // delete an item would otherwise also take it in hand.
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeCustomCargo(item.id);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter" && e.key !== " ") return;
+                  e.stopPropagation();
+                  e.preventDefault();
+                  removeCustomCargo(item.id);
+                }}
+              >
+                ×
+              </span>
+            )}
             <span
               className={`unplaced-fit${fitsIn.length === 0 || !hasFreeSpace ? " unplaced-nofit" : ""}`}
               title={(fitsIn.length === 0 ? whyNot : blocker) ?? undefined}

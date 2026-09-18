@@ -2,13 +2,14 @@ import { useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { useShallow } from "zustand/react/shallow";
 import type { ThreeEvent } from "@react-three/fiber";
-import type { StowagePlan, Vessel } from "@/types/domain";
+import type { Slot, StowagePlan, Vessel } from "@/types/domain";
 import { DIM, LAYOUT } from "@/lib/geometry";
 import { cursorOnTierPlane, nearestSlotIndex } from "@/lib/nearest-slot";
 import { slotVisible } from "@/lib/drop-verdict";
 import { buildStowageModel, type SlotDef } from "@/engine/stowage-model";
 import { isFortyBay } from "@/engine/slot-helpers";
 import { sizeFitsBay } from "@/engine/placement-checks";
+import { landingSlotFor } from "@/engine/placement/landing-slot";
 import { activeContainerId, usePlanStore } from "@/store/usePlanStore";
 import { commitPlacement } from "@/store/commit-placement";
 
@@ -138,6 +139,18 @@ export function EmptySlotPicker({ vessel, plan }: { vessel: Vessel; plan: Stowag
     return slots[nearestSlotIndex([local.x, local.y, local.z], centres)] ?? slot0;
   };
 
+  /**
+   * GRAVITY (landing-slot plan, phase 01): the slot the pointer resolved to is mapped to the one the box
+   * would actually come to rest in — the lowest free, supported tier of that column. Applied HERE, in the
+   * single writer of `hoveredSlot`, so the ghost, the verdict chip, the cursor, the Sidebar readout and
+   * the commit all follow from one mapping and cannot disagree about where the box is going.
+   *
+   * `?? slot` keeps the aimed slot when the column admits nothing: the planner then gets the predicate's
+   * own refusal for the slot they pointed at, instead of the pointer silently resolving to nothing.
+   */
+  const landed = (slot: SlotDef | null): Slot | null =>
+    slot ? landingSlotFor(vessel, plan, slot) ?? slot : null;
+
   const capacity = slots.length || 1;
 
   // "Never both layers" (Phase D open question 2) — the hand's KIND decides which pick layer is live,
@@ -155,12 +168,12 @@ export function EmptySlotPicker({ vessel, plan }: { vessel: Vessel; plan: Stowag
       args={[undefined, undefined, capacity]}
       onPointerMove={(e) => {
         e.stopPropagation();
-        setHoveredSlot(resolveSlot(e));
+        setHoveredSlot(landed(resolveSlot(e)));
       }}
       onPointerOut={() => setHoveredSlot(null)}
       onClick={(e) => {
         e.stopPropagation();
-        const target = resolveSlot(e);
+        const target = landed(resolveSlot(e));
         // The CLICK trigger of the one commit resolver (WCAG 2.5.7): a PICKED container is placed by
         // this click alone, with no drag gesture anywhere. It is the same `commitPlacement` the drop
         // release calls, so the two can never disagree. A rejected pick deliberately stays alive

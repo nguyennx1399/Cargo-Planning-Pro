@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import type { StowagePlan, ValidationReport, Vessel } from "@/types/domain";
 import type { StabilityResult } from "@/engine/stability-indicative";
 import { useShallow } from "zustand/react/shallow";
@@ -37,7 +36,7 @@ export function Sidebar({
   cargoLoaded, onToggleCargo, projectCargoLoaded, onToggleProjectCargo,
 }: Props) {
   // Undo/redo/Esc/R/Delete in one place (leaves ArrowLeft/Right below alone on purpose — see the hook).
-  useStowageKeyboardShortcuts();
+  useStowageKeyboardShortcuts(vessel);
   // The ONE commit trigger's window-level release, for a drag of either kind of cargo (Phase 03 moved
   // it out of this file: the listener needs both doors of the resolver, and this component is at its
   // own LOC budget).
@@ -51,25 +50,9 @@ export function Sidebar({
       setSelected: state.setSelected,
     }))
   );
-  const bayIndex = s.bayFilter === null ? -1 : vessel.bays.indexOf(s.bayFilter);
-  const gotoBay = (delta: number) => {
-    const next = bayIndex === -1 ? (delta > 0 ? 0 : vessel.bays.length - 1) : bayIndex + delta;
-    if (next >= 0 && next < vessel.bays.length) s.setBayFilter(vessel.bays[next]);
-  };
-  // Arrow-key bay navigation. The INPUT/TEXTAREA guard below is load-bearing, not a precaution: the
-  // Unplaced section's search field (P2) is the app's first text input, and typing an id must never
-  // walk the bay filter out from under the caret. The Esc/undo handler is guarded the same way.
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.altKey || e.ctrlKey || e.metaKey) return;
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
-      if (e.key === "ArrowLeft") gotoBay(-1);
-      else if (e.key === "ArrowRight") gotoBay(1);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [bayIndex, vessel.bays]);
+  // Bay navigation lives entirely elsewhere now: the chevron buttons in `ViewOptionsPanel` (which has
+  // its own stepper) and the `[` / `]` keys in `use-stowage-keyboard-shortcuts.ts`. The arrow keys this
+  // file used to own now PAN the 3D view, and leaving a second handler here would act on one press twice.
   // The ONE commit resolver's window-level trigger, mounted only while a DRAG is in flight, now lives
   // in `use-stowage-drop-release.ts` (Phase 03) so it can serve both kinds of cargo without this file
   // growing past the 200-LOC rule.
@@ -117,7 +100,7 @@ export function Sidebar({
 
       <ColorModeControl ports={plan.ports} />
 
-      <ViewOptionsPanel vessel={vessel} />
+      <ViewOptionsPanel vessel={vessel} plan={plan} />
 
       <StabilityPanel attitude={attitude} />
 

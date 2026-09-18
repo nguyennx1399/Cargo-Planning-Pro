@@ -1,5 +1,8 @@
+import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
-import type { Vessel } from "@/types/domain";
+import type { StowagePlan, Vessel } from "@/types/domain";
+import { freeSpaceReport } from "@/engine/free-space";
+import { FREE_SPACE_CAVEAT, freeSpaceSummary } from "@/lib/free-space-text";
 import { usePlanStore } from "@/store/usePlanStore";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -11,7 +14,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
  * Sidebar.tsx to keep that file under the 200-LOC rule. Store-driven, so it takes only the vessel
  * (for the bay list). The ArrowLeft/Right bay navigation that also drives `bayFilter` stays in
  * Sidebar, where it already lived. */
-export function ViewOptionsPanel({ vessel }: { vessel: Vessel }) {
+export function ViewOptionsPanel({ vessel, plan }: { vessel: Vessel; plan: StowagePlan }) {
   const s = usePlanStore(
     useShallow((state) => ({
       showHull: state.showHull,
@@ -23,7 +26,15 @@ export function ViewOptionsPanel({ vessel }: { vessel: Vessel }) {
       bayFilter: state.bayFilter,
       setBayFilter: state.setBayFilter,
       resetView: state.resetView,
+      showFreeSpace: state.showFreeSpace,
+      toggleFreeSpace: state.toggleFreeSpace,
     }))
+  );
+  // One report per (vessel, plan, toggles) — never per frame. It is the same sweep the overlay draws
+  // from, so the picture and the numbers cannot disagree.
+  const freeSpace = useMemo(
+    () => freeSpaceReport(vessel, plan, { showOnDeck: s.showOnDeck, showUnderDeck: s.showUnderDeck, bayFilter: s.bayFilter }),
+    [vessel, plan, s.showOnDeck, s.showUnderDeck, s.bayFilter],
   );
   const bayIndex = s.bayFilter === null ? -1 : vessel.bays.indexOf(s.bayFilter);
   const gotoBay = (delta: number) => {
@@ -40,6 +51,18 @@ export function ViewOptionsPanel({ vessel }: { vessel: Vessel }) {
       <Button variant="outline" size="sm" className="self-start" onClick={s.resetView}>
         Reset view
       </Button>
+      {/* The free-space overlay + its numbers. The sentence is built in `lib/free-space-text.ts`, and the
+          caveat under it is not decoration: "free" here means nothing is standing there, which is NOT the
+          same as "an item fits" — weight, height and the stowage rules still decide that. */}
+      <Button variant="outline" size="sm" className="self-start" onClick={s.toggleFreeSpace}>
+        {s.showFreeSpace ? "Hide free space" : "Show free space"}
+      </Button>
+      {s.showFreeSpace && (
+        <>
+          <p className="muted small">{freeSpaceSummary(freeSpace)}</p>
+          <p className="muted small">{FREE_SPACE_CAVEAT}</p>
+        </>
+      )}
       <div className="flex items-center gap-2">
         <Checkbox id="show-hull" checked={s.showHull} onCheckedChange={s.toggleHull} />
         <Label htmlFor="show-hull">Hull</Label>

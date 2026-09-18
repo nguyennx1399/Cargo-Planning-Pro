@@ -8,6 +8,7 @@ import { Sidebar } from "@/features/panels/Sidebar";
 import { BayPlanView } from "@/features/bayplan/BayPlanView";
 import { OffsetsImportPanel } from "@/features/vessel-onboarding/OffsetsImportPanel";
 import { buildDemoPlan } from "@/data/build-demo-plan";
+import { withCustomCargo } from "@/data/with-custom-cargo";
 import {
   DEFAULT_VESSEL_ID,
   VESSEL_CATALOG,
@@ -56,13 +57,21 @@ export default function App() {
   const playbackCount = usePlanStore((s) => s.playbackCount);
   const draftPlan = usePlanDraftStore((s) => s.plan);
   const loadPlan = usePlanDraftStore((s) => s.loadPlan);
+  const customCargo = usePlanStore((s) => s.customCargo);
 
   // The demo plan is built once per (vessel, toggles) and loaded into the draft store; there is no
   // memo-derived plan any more — the report, the scene, the sidebar and the bay plan all read the
   // draft. `vessel`/`containers` identities are cached per catalog id, so this cannot loop.
+  // Custom project cargo is merged into every rebuild (see `with-custom-cargo.ts`): the plan is rebuilt
+  // on each vessel/toggle change, so items the planner typed in would otherwise vanish the first time
+  // they press a toggle. Adding one bumps `customCargo` and therefore re-runs this same effect — one
+  // path into the draft store, not two.
   useEffect(() => {
-    loadPlan(vessel, buildDemoPlan(vessel, containers, { cargoLoaded, projectCargoLoaded }));
-  }, [vessel, containers, cargoLoaded, projectCargoLoaded, loadPlan]);
+    loadPlan(
+      vessel,
+      withCustomCargo(buildDemoPlan(vessel, containers, { cargoLoaded, projectCargoLoaded }), customCargo),
+    );
+  }, [vessel, containers, cargoLoaded, projectCargoLoaded, customCargo, loadPlan]);
 
   const plan = draftPlan ?? LOADING_PLAN;
   const report = useMemo(() => validatePlan(vessel, plan), [vessel, plan]);

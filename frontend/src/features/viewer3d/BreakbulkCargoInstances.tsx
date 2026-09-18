@@ -16,6 +16,9 @@ const CATEGORY_COLOR: Record<string, string> = {
   wind_turbine_nacelle: "#8A97A3",
   wind_turbine_tower: "#B7C0C8",
   yacht: "#F2F4F6",
+  // Planner-defined cargo: a warmer neutral so a hand-entered item reads as distinct from the demo fleet
+  // without implying a verdict (green/red belong to the drop layers).
+  general: "#C2B49A",
 };
 
 /** How far the pointer must travel with the button down before a press counts as a MOVE rather than a

@@ -3,6 +3,7 @@ import { useShallow } from "zustand/react/shallow";
 import type { Container, Slot, StowagePlan, Vessel } from "@/types/domain";
 import { activeContainerId, usePlanStore } from "@/store/usePlanStore";
 import { commitPlacement } from "@/store/commit-placement";
+import { landingSlotFor, landingSlotsOnly } from "@/engine/placement/landing-slot";
 import { validSlotsFor } from "@/engine/placement/placeholders";
 import { dropOutcomeText } from "@/lib/drop-feedback";
 import { podColorMap } from "@/lib/colors";
@@ -78,8 +79,14 @@ export function BayPlanView({ vessel, plan }: { vessel: Vessel; plan: StowagePla
   // The container in hand (dragged or picked) and the positions it may take, from the engine's own
   // set — the SAME call the placeholder layer and the Sidebar hint make.
   const activeContainer = activeId ? plan.containers.find((c) => c.id === activeId) : undefined;
+  // GRAVITY (landing-slot plan, phase 02): only the slots a box would actually come to rest in are
+  // marked, so the grid promises exactly what a click delivers — the same projection the 3D
+  // placeholder layer applies to the same `validSlotsFor` set.
   const validKeys = useMemo(
-    () => (activeContainer ? new Set(validSlotsFor(vessel, plan, activeContainer).map((slot) => slot.key)) : null),
+    () =>
+      activeContainer
+        ? new Set(landingSlotsOnly(vessel, plan, validSlotsFor(vessel, plan, activeContainer)).map((slot) => slot.key))
+        : null,
     [vessel, plan, activeContainer]
   );
   /** The 2D half of the ONE commit resolver. With nothing in hand this is still "select what I
@@ -92,7 +99,9 @@ export function BayPlanView({ vessel, plan }: { vessel: Vessel; plan: StowagePla
       s.setSelected(container ? container.id : null);
       return;
     }
-    commitPlacement(slot, "bayplan");
+    // Same gravity mapping as the 3D pointer path: clicking high in a column lands the box on that
+    // column's stack top, so the two triggers cannot behave differently for the same cell.
+    commitPlacement(landingSlotFor(vessel, plan, slot) ?? slot, "bayplan");
   };
 
   if (s.bay === null) {

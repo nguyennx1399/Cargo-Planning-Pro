@@ -281,3 +281,32 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
   .layout { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
   .sidebar { max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--line); }
 }
+
+/* Custom project-cargo form (custom cargo plan, phase 04). Four dimension inputs sit in a 2-column
+   grid so the panel column stays narrow; errors are inline under their own field. */
+.custom-cargo-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.custom-cargo-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+.custom-cargo-error {
+  color: var(--error, #b3261e);
+  font-size: 0.75rem;
+}
+.unplaced-remove {
+  margin-left: 0.4rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  cursor: pointer;
+  opacity: 0.55;
+}
+.unplaced-remove:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.08);
+}

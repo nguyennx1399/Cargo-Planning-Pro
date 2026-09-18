@@ -6,7 +6,11 @@ import type { BreakbulkCategory, BreakbulkCargo } from "@/types/domain";
  * gravity is below its geometric mid-height; a blade is closer to uniform. */
 type CatalogEntry = Omit<BreakbulkCargo, "id" | "pol" | "pod">;
 
-export const BREAKBULK_CATALOG: Record<BreakbulkCategory, CatalogEntry[]> = {
+/** DEMO categories only — `general` is deliberately absent: it is the shape a planner's own item takes,
+ * defined by typed-in dimensions, so there is nothing to draw from a reference catalogue. Typing it as
+ * `Exclude<…>` rather than adding an empty bucket keeps the demo generator from ever picking a category
+ * it cannot build an item from. */
+export const BREAKBULK_CATALOG: Record<Exclude<BreakbulkCategory, "general">, CatalogEntry[]> = {
   wind_turbine_blade: [
     { category: "wind_turbine_blade", length_m: 62, width_m: 4.5, height_m: 3.5, weight_t: 22, kg_above_base_m: 1.7 },
     { category: "wind_turbine_blade", length_m: 85, width_m: 5, height_m: 4, weight_t: 33, kg_above_base_m: 2.0 },

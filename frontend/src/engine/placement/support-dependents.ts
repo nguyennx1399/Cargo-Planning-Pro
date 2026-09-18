@@ -19,32 +19,13 @@
  *
  * The bay/deck/half arithmetic is NOT re-derived here: `bayPosition`, `deckOf` and `tierBelow` are the
  * same primitives `can-place-container.ts` and the plan-wide rules use, so "the tier below" has one
- * definition in this repo and a 20' half keeps belonging to its 40' parent.
+ * definition in this repo and a 20' half keeps belonging to its 40' parent. Cell occupancy likewise
+ * comes from the shared `cell-occupancy.ts` (the landing rule asks the same question).
  */
 import type { Placement, StowagePlan, Vessel } from "@/types/domain";
-import { bayPosition, deckOf, type HalfSide } from "@/engine/slot-helpers";
+import { bayPosition, deckOf } from "@/engine/slot-helpers";
 import { tierBelow } from "@/engine/placement-checks";
-
-/** Which 20' halves of a cell are occupied by SOME box. Deliberately plan-shaped (a scan of
- * `plan.placements`), not a cached index: this runs at most a handful of times per edit — never on the
- * pointer-move path — and a second index keyed differently from `can-place-container.ts`'s is exactly
- * the kind of duplicate that drifts. */
-function occupiedHalves(
-  vessel: Vessel,
-  plan: StowagePlan,
-  fortyBay: number,
-  row: number,
-  tier: number,
-): Record<HalfSide, boolean> {
-  const halves: Record<HalfSide, boolean> = { fore: false, aft: false };
-  for (const p of plan.placements) {
-    if (p.slot.row !== row || p.slot.tier !== tier) continue;
-    const pos = bayPosition(p.slot.bay, vessel.bays);
-    if (!pos || pos.fortyBay !== fortyBay) continue;
-    for (const half of pos.halves) halves[half] = true;
-  }
-  return halves;
-}
+import { allHalvesOccupied, occupiedHalvesAt } from "./cell-occupancy";
 
 /** True when every half this placement covers has something under it — the per-box form of
  * `no_floating`. The lowest tier of its stack rests on the tank top / hatch cover and is supported by
@@ -57,8 +38,7 @@ function isSupported(vessel: Vessel, plan: StowagePlan, placement: Placement): b
   if (!stack) return true; // no spec for this column: nothing here can claim to know better
   const below = tierBelow(stack, placement.slot.tier);
   if (below === null) return true; // lowest tier of the stack — it stands on the deck itself
-  const halves = occupiedHalves(vessel, plan, pos.fortyBay, placement.slot.row, below);
-  return pos.halves.every((half) => halves[half]);
+  return allHalvesOccupied(occupiedHalvesAt(vessel, plan, pos.fortyBay, placement.slot.row, below), pos.halves);
 }
 
 /** The placements sitting one tier above `placement` in the same 40'-bay column and on the same deck —

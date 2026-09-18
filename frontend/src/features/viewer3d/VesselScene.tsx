@@ -16,12 +16,14 @@ import { SlotPlaceholders } from "./SlotPlaceholders";
 import { AreaPlaceholders } from "./AreaPlaceholders";
 import { AreaDropPlane } from "./AreaDropPlane";
 import { GhostBreakbulkPreview } from "./GhostBreakbulkPreview";
+import { FreeSpaceView } from "./FreeSpaceView";
 import { WaterlineReference } from "./WaterlineReference";
 import { LoadingSequenceDriver } from "./LoadingSequenceDriver";
 import { ShipAttitudeDriver } from "./ShipAttitudeDriver";
 import { activeBreakbulkId, dragInFlight, handInUse, usePlanStore } from "@/store/usePlanStore";
 import { getVesselGeometry } from "@/data/vessel-geometry-catalog";
 import { shipAttitudeInputFromStability } from "@/lib/ship-attitude-transform";
+import { horizontalPanOffset, type Vec3 } from "@/lib/camera-pan";
 
 /**
  * Freezes camera orbit while a drag is in flight: left-drag orbits by default, so without this the
@@ -74,6 +76,34 @@ function ViewReset() {
   return null;
 }
 
+/**
+ * Slides the camera and the orbit target together when an arrow key is pressed — panning, not orbiting
+ * (moving only the camera would swing the view). The offset maths is `lib/camera-pan.ts`; this component
+ * is only the wiring, and it is driven by a nonce for the same reason `ViewReset` is: two presses in the
+ * same direction must be two events.
+ */
+function ViewPan() {
+  const { seq, dx } = usePlanStore((s) => s.viewPan);
+  const controls = useThree((s) => s.controls) as unknown as { target: THREE.Vector3; update(): void } | null;
+  const camera = useThree((s) => s.camera);
+
+  useEffect(() => {
+    if (!controls || seq === 0) return;
+    const offset = horizontalPanOffset(
+      camera.position.toArray() as unknown as Vec3,
+      controls.target.toArray() as unknown as Vec3,
+      camera.up.toArray() as unknown as Vec3,
+      dx,
+    );
+    camera.position.set(camera.position.x + offset[0], camera.position.y + offset[1], camera.position.z + offset[2]);
+    controls.target.set(controls.target.x + offset[0], controls.target.y + offset[1], controls.target.z + offset[2]);
+    controls.update();
+    // `seq` alone drives this: `dx` is read from the same state snapshot and must not re-fire on its own.
+  }, [seq]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return null;
+}
+
 export function VesselScene({ vessel, plan, attitude }: { vessel: Vessel; plan: StowagePlan; attitude: StabilityResult | null }) {
   const setSelected = usePlanStore((s) => s.setSelected);
   const exaggerate = usePlanStore((s) => s.exaggerate);
@@ -98,6 +128,10 @@ export function VesselScene({ vessel, plan, attitude }: { vessel: Vessel; plan: 
   // unobstructed ship whether the target is a tank top, an under-deck slot, or a hatch cover a crane
   // stands over.
   const gestureActive = usePlanStore(handInUse);
+  // The free-space overlay answers "what is still empty"; the gesture layers answer "where may THIS item
+  // go". Two translucent layers over the same cells would clutter and, worse, contradict — so the
+  // overlay yields to any gesture.
+  const showFreeSpace = usePlanStore((s) => s.showFreeSpace);
   const item = useMemo(
     () => (handId ? plan.breakbulk_cargo.find((c) => c.id === handId) ?? null : null),
     [plan.breakbulk_cargo, handId],
@@ -151,10 +185,12 @@ export function VesselScene({ vessel, plan, attitude }: { vessel: Vessel; plan: 
         {item ? <AreaPlaceholders vessel={vessel} regions={regions} /> : null}
         {item ? <AreaDropPlane vessel={vessel} item={item} areas={areas} /> : null}
         <GhostBreakbulkPreview vessel={vessel} plan={plan} item={item} pose={hoveredPose} />
+        {showFreeSpace && !gestureActive ? <FreeSpaceView vessel={vessel} plan={plan} /> : null}
       </group>
 
       <OrbitLock />
       <ViewReset />
+      <ViewPan />
       {/* `zoomToCursor`: the wheel converges on what is UNDER THE POINTER instead of pulling the camera
           toward the ship's centre. It moves `controls.target` as it goes — `ViewReset` above is the
           recovery for that drift. */}

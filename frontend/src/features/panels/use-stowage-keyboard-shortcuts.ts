@@ -7,17 +7,18 @@
  *
  *     useStowageKeyboardShortcuts();
  *
- * Reconciliation with the `ArrowLeft`/`ArrowRight` bay navigation (the effect in `Sidebar.tsx`): this
- * hook deliberately does NOT handle arrows, and Sidebar's handler already returns early on
- * ctrl/meta/alt. The two handler sets are therefore disjoint, so no keypress can be acted on twice
- * (two global handlers both advancing the bay filter on one arrow press is the bug this avoids). If
- * the arrow navigation is ever moved here, delete that effect in the same change.
+ * ARROWS AND BRACKETS (arrow-key pan plan): this hook now owns them. The arrows PAN the 3D view and
+ * `[` / `]` step the bay filter — the reverse of the original binding, which had the arrows stepping
+ * bays from a second global handler in `Sidebar.tsx`. That handler was deleted in the same change, as
+ * its own comment required: two global handlers acting on one press is the bug this file exists to
+ * avoid. `ViewOptionsPanel`'s chevron buttons remain the discoverable path for bays.
  *
  * Handlers are read once via `getState()` inside the listener rather than subscribed, so the effect
  * has no dependencies and can never go stale or re-register mid-gesture.
  */
 import { useEffect } from "react";
 import { cancelPlacement } from "@/store/commit-placement";
+import type { Vessel } from "@/types/domain";
 import { usePlanDraftStore } from "@/store/usePlanDraftStore";
 import { usePlanStore } from "@/store/usePlanStore";
 
@@ -43,7 +44,16 @@ function unplaceSelectedCargo(): void {
   draft.unplaceBreakbulk(selectedId);
 }
 
-export function useStowageKeyboardShortcuts(): void {
+/** Step the bay filter by `delta`, wrapping at neither end — the keyboard twin of ViewOptionsPanel's
+ * chevron buttons. Lives here because the keys do; the panel keeps its own copy for its buttons. */
+function stepBay(vessel: Vessel, delta: number): void {
+  const { bayFilter, setBayFilter } = usePlanStore.getState();
+  const index = bayFilter === null ? -1 : vessel.bays.indexOf(bayFilter);
+  const next = index === -1 ? (delta > 0 ? 0 : vessel.bays.length - 1) : index + delta;
+  if (next >= 0 && next < vessel.bays.length) setBayFilter(vessel.bays[next]);
+}
+
+export function useStowageKeyboardShortcuts(vessel: Vessel): void {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
       if (isTypingTarget(e.target)) return;
@@ -62,6 +72,14 @@ export function useStowageKeyboardShortcuts(): void {
       }
       if (e.altKey) return;
 
+      // ARROWS PAN THE 3D VIEW (they used to step the bay filter — that moved to `[` / `]` below).
+      // Left/right only: Up/Down are the browser's own scroll keys for the sidebar column, and hijacking
+      // them globally would break scrolling in a panel-heavy UI.
+      if (e.key === "ArrowLeft") return usePlanStore.getState().panView(-1);
+      if (e.key === "ArrowRight") return usePlanStore.getState().panView(1);
+      if (e.key === "[") return stepBay(vessel, -1);
+      if (e.key === "]") return stepBay(vessel, 1);
+
       if (key === "r") usePlanStore.getState().rotateHand(); // a no-op unless cargo is in hand
       // Esc ends a drag AND a pick, without committing either (Phase C requirement).
       else if (key === "escape") cancelPlacement();
@@ -70,5 +88,5 @@ export function useStowageKeyboardShortcuts(): void {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [vessel]);
 }

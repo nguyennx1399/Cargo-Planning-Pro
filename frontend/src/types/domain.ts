@@ -121,7 +121,15 @@ export interface Placement {
 
 /** Project/breakbulk cargo: not container-shaped, doesn't fit the bay/row/tier slot grid.
  * Sits on deck at a free (x, z) footprint instead. See plans/260912-0117-cargo-type-catalog-breakbulk. */
-export type BreakbulkCategory = "wind_turbine_blade" | "wind_turbine_nacelle" | "wind_turbine_tower" | "yacht";
+/** `general` is the catch-all for cargo a planner defines by hand: it has no characteristic silhouette,
+ * so it is drawn as a plain box at its own L×W×H — which is exactly the footprint the placement rules
+ * use, so the picture and the checks cannot diverge. The other four are the demo fleet's shaped items. */
+export type BreakbulkCategory =
+  | "wind_turbine_blade"
+  | "wind_turbine_nacelle"
+  | "wind_turbine_tower"
+  | "yacht"
+  | "general";
 
 export interface BreakbulkCargo {
   id: string;
