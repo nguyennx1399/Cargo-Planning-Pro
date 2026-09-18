@@ -10,7 +10,7 @@ type CatalogEntry = Omit<BreakbulkCargo, "id" | "pol" | "pod">;
  * defined by typed-in dimensions, so there is nothing to draw from a reference catalogue. Typing it as
  * `Exclude<…>` rather than adding an empty bucket keeps the demo generator from ever picking a category
  * it cannot build an item from. */
-export const BREAKBULK_CATALOG: Record<Exclude<BreakbulkCategory, "general">, CatalogEntry[]> = {
+export const BREAKBULK_CATALOG: Record<Exclude<BreakbulkCategory, "general" | "support_frame">, CatalogEntry[]> = {
   wind_turbine_blade: [
     { category: "wind_turbine_blade", length_m: 62, width_m: 4.5, height_m: 3.5, weight_t: 22, kg_above_base_m: 1.7 },
     { category: "wind_turbine_blade", length_m: 85, width_m: 5, height_m: 4, weight_t: 33, kg_above_base_m: 2.0 },

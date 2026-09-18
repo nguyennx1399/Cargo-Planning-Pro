@@ -46,6 +46,7 @@ export function rotationNext(rotationDeg: number): 0 | 90 {
  * pointer move would re-render the ghost and re-run its geometry memo once per pixel. */
 export const samePose = (a: BreakbulkPose, b: BreakbulkPose): boolean =>
   a.areaId === b.areaId &&
+  a.onCargoId === b.onCargoId && // the same x/z on a frame's top and on the floor are different poses
   a.x_m === b.x_m &&
   a.z_m === b.z_m &&
   (a.rotation_deg ?? 0) === (b.rotation_deg ?? 0);
@@ -69,7 +70,7 @@ const gridBounds = (min: number, max: number, half: number): [number, number] =>
  * instead of this module inventing a position, and a clamp can never move a pose further out than it
  * already was: an item larger than the area at that rotation, and a rect that is not a whole number of
  * steps across, where the inward bounds cross and no grid position exists at all. */
-export function clampPoseToArea(area: StowageArea, item: BreakbulkCargo, pose: BreakbulkPose): BreakbulkPose {
+export function clampPoseToArea(area: Pick<StowageArea, "rect">, item: BreakbulkCargo, pose: BreakbulkPose): BreakbulkPose {
   const [ex, ez] = footprintExtents(item, pose.rotation_deg ?? 0);
   const rect = area.rect;
   if (rect.xMax - rect.xMin < ex || rect.zMax - rect.zMin < ez) return pose;

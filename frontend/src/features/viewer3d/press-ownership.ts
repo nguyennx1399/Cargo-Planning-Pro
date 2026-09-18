@@ -20,19 +20,38 @@
  *
  * `raycast={() => null}` layers are not affected either: R3F raycasts only the objects that registered
  * handlers, so a dead mesh (the ghost, the placeholders) can never be frontmost here.
+ *
+ * IDLE HOVER AND CLICK (cargo-click fix, 2026-09-18): the same "passive layers must not block cargo"
+ * rule extends past the press. With nothing in hand, the empty-slot picker's INVISIBLE volumes sit over
+ * the hatch covers and holds — exactly where project cargo rests, since no container is there — and
+ * were the nearest hit at the centre of all 8 placed items on BBC SAO PAULO. Their `stopPropagation`
+ * swallowed the item's hover and click, so an item was selectable only on the edges sticking out of the
+ * slot grid. `rayHitsCargo` is the test the picker uses to step aside: the planner sees the cargo, not
+ * the invisible volume, so visible cargo owns an idle pointer.
  */
-import type { ThreeEvent } from "@react-three/fiber";
 
 /** `userData` for the meshes that may start a placement gesture (the two cargo layers). */
 export const GESTURE_LAYER = { gestureLayer: true } as const;
 
-/** Structural, not THREE's `Object3D`: all this needs is `userData`, and reading it tolerantly means a
- * hit that somehow carries no object can never throw inside a pointer handler. */
-const isGestureLayer = (hit: { eventObject?: { userData?: Record<string, unknown> } }): boolean =>
-  hit.eventObject?.userData?.gestureLayer === true;
+/** One ray hit, structurally — THREE's `Intersection`/R3F's event carry these fields, and a test can
+ * build them without a scene. Read tolerantly so a hit with no object can never throw in a handler. */
+export interface RayHit {
+  eventObject?: { userData?: Record<string, unknown> };
+}
+
+/** The part of an R3F pointer event these rules read. */
+export interface RayEvent {
+  intersections: readonly RayHit[];
+  eventObject?: unknown;
+}
+
+const isGestureLayer = (hit: RayHit): boolean => hit.eventObject?.userData?.gestureLayer === true;
 
 /** True when the object whose handler is running is the nearest GESTURE layer hit of this event. */
-export function isFrontmostGestureHit(e: ThreeEvent<PointerEvent | MouseEvent>): boolean {
+export function isFrontmostGestureHit(e: RayEvent): boolean {
   const front = e.intersections.find(isGestureLayer);
-  return front?.eventObject === e.eventObject;
+  return front !== undefined && front.eventObject === e.eventObject;
 }
+
+/** True when any cargo (a `GESTURE_LAYER` object) lies anywhere on this event's ray. */
+export const rayHitsCargo = (e: RayEvent): boolean => e.intersections.some(isGestureLayer);

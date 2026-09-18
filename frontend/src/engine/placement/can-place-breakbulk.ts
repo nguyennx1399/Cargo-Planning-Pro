@@ -15,7 +15,7 @@
  * the `StowageModel` deliberately does not carry.
  */
 import type { BreakbulkCargo, BreakbulkPlacement, Placement, StowagePlan, Vessel } from "@/types/domain";
-import { footprintRect, rectsOverlap, type Rect } from "@/engine/breakbulk-overlap-check";
+import { footprintRect, rectsOverlap } from "@/engine/breakbulk-overlap-check";
 import {
   WEATHER_DECK_AREA_ID,
   areaIdOf,
@@ -25,10 +25,9 @@ import {
 } from "@/engine/stowage-model";
 import { resultOf, type PlacementResult, type Reason } from "./reason";
 import { approximateAreaReason, pad2, reason } from "./placement-reason-builders";
-
-/** DEMO approximation, not real structural deck strength — see plan.md "Ngoài phạm vi". */
-const OVERWEIGHT_BAND_M = 20;
-const OVERWEIGHT_LIMIT_T = 200;
+import { supportChain } from "./breakbulk-stack";
+import { OVERWEIGHT_BAND_M, OVERWEIGHT_LIMIT_T, bandFor, bandWeight } from "./breakbulk-band-weight";
+import { candidatePlan, floorPressure, rangesOverlap, stackReasons, verticalRange } from "./breakbulk-stack-checks";
 
 // Placement stores a rect's CENTER (x_m/z_m), so footprintRect reconstructs edges as
 // center +/- extent/2 — for edge-of-deck placements (center derived from area.xMin/zMin
@@ -47,6 +46,8 @@ export interface BreakbulkPose {
   x_m: number;
   z_m: number;
   rotation_deg?: number;
+  /** The placed item/frame this pose rests on (stacking plan). Absent = the area's floor. */
+  onCargoId?: string;
 }
 
 /** The pose as a placement, so the existing rect helpers apply unchanged. */
@@ -57,33 +58,8 @@ function placementOf(item: BreakbulkCargo, pose: BreakbulkPose): BreakbulkPlacem
     z_m: pose.z_m,
     rotation_deg: pose.rotation_deg ?? 0,
     ...(pose.areaId ? { area_id: pose.areaId } : {}),
+    ...(pose.onCargoId ? { on_cargo_id: pose.onCargoId } : {}),
   };
-}
-
-/** The 20 m band containing `x_m`, reproduced with the rule's own arithmetic (repeated addition from
- * `area.xMin`, `x_m` inclusive of the start and exclusive of the end) so band edges land on exactly
- * the same floats. Null when the point is in no band — the rule's `for` loop would have skipped it. */
-function bandFor(area: Rect, x_m: number): { start: number; end: number } | null {
-  let start = area.xMin;
-  while (start < area.xMax) {
-    const end = start + OVERWEIGHT_BAND_M;
-    if (x_m >= start && x_m < end) return { start, end };
-    start = end;
-  }
-  return null;
-}
-
-/** Weight of the band in one area with the candidate's own placement excluded (it is re-added by the
- * caller, which makes the total identical whether the item is already placed or not). */
-function bandWeight(plan: StowagePlan, byId: Map<string, BreakbulkCargo>, itemId: string, areaId: string, band: { start: number; end: number }): number {
-  let weight = 0;
-  for (const p of plan.breakbulk_placements) {
-    if (p.cargo_id === itemId) continue;
-    if (areaIdOf(p) !== areaId) continue;
-    if (p.x_m < band.start || p.x_m >= band.end) continue;
-    weight += byId.get(p.cargo_id)?.weight_t ?? 0; // orphans carry no weight, as in `byArea`
-  }
-  return weight;
 }
 
 /** `containerOccupancy` memoised on the placements ARRAY identity: a drag start evaluates ~900
@@ -116,6 +92,11 @@ export function canPlaceBreakbulk(
   const areaKey = pose.areaId || WEATHER_DECK_AREA_ID;
   const area = model.areaById.get(areaKey);
   const rect = footprintRect(item, placementOf(item, pose));
+  // STACKING: judge the plan as it would be with the item at this pose (see `candidatePlan`). For a
+  // floor item in a plan without stacks every number below is exactly what it was before stacking.
+  const cand = candidatePlan(plan, item, placementOf(item, pose));
+  const onFloor = supportChain(cand, item.id).chain.length === 0;
+  const mine = verticalRange(cand, item.id, item.height_m);
 
   if (!area) {
     reasons.push(reason("breakbulk_out_of_deck_area", `${item.id}: unknown stowage area "${areaKey}"`));
@@ -131,14 +112,18 @@ export function canPlaceBreakbulk(
     }
     const keepOut = area.keepOuts.find((k) => rectsOverlap(rect, k)); // read-only: never sort in place
     if (keepOut) reasons.push(reason("breakbulk_in_keep_out", `${item.id}: footprint overlaps ${keepOut.label}`));
-    if (Number.isFinite(area.maxHeight) && item.height_m > area.maxHeight + EDGE_TOLERANCE_M) {
-      reasons.push(reason("breakbulk_too_tall", `${item.id}: ${item.height_m}m tall exceeds the ${area.maxHeight}m clear height in ${area.label}`));
+    // Stack height: the TOP of the item above the floor, so a stack is judged whole. A floor item keeps
+    // its original message byte for byte (pinned by tests).
+    if (Number.isFinite(area.maxHeight) && mine[1] > area.maxHeight + EDGE_TOLERANCE_M) {
+      const message = onFloor
+        ? `${item.id}: ${item.height_m}m tall exceeds the ${area.maxHeight}m clear height in ${area.label}`
+        : `${item.id}: top of stack at ${mine[1].toFixed(2)}m exceeds the ${area.maxHeight}m clear height in ${area.label}`;
+      reasons.push(reason("breakbulk_too_tall", message));
     }
-    if (area.loadRating !== undefined) {
-      const pressure = item.weight_t / (item.length_m * item.width_m);
-      if (pressure > area.loadRating + 1e-9) {
-        reasons.push(reason("breakbulk_over_pressure", `${item.id}: ${pressure.toFixed(2)} t/m² exceeds the ${area.loadRating} t/m² rating of ${area.label}`));
-      }
+    // Pressure belongs to the item that TOUCHES the floor, carrying everything stacked on it.
+    const floor = area.loadRating !== undefined ? floorPressure(cand, item.id) : null;
+    if (floor && area.loadRating !== undefined && floor.pressure > area.loadRating + 1e-9) {
+      reasons.push(reason("breakbulk_over_pressure", `${floor.id}: ${floor.pressure.toFixed(2)} t/m² exceeds the ${area.loadRating} t/m² rating of ${area.label}`));
     }
     const band = bandFor(area.rect, pose.x_m);
     if (band) {
@@ -172,6 +157,8 @@ export function canPlaceBreakbulk(
     if (areaIdOf(other) !== areaKey) continue;
     const otherItem = byId.get(other.cargo_id);
     if (!otherItem || !rectsOverlap(rect, footprintRect(otherItem, other))) continue;
+    // 3-D: footprints overlapping in plan only clash when their heights overlap too (a stack does not).
+    if (!rangesOverlap(mine, verticalRange(cand, other.cargo_id, otherItem.height_m))) continue;
     // Plan order decides which id is named first, so both sides of a pair produce ONE message (the
     // plan rule reports each pair once, from the earlier placement).
     const mineFirst = orderOf(item.id) <= orderOf(other.cargo_id);
@@ -187,5 +174,6 @@ export function canPlaceBreakbulk(
     const deckLabel = hit.deck === "on" ? "on-deck" : "under-deck";
     reasons.push(reason("breakbulk_overlaps_container", `${item.id}: footprint overlaps ${deckLabel} container stack bay ${hit.bay} row ${pad2(hit.row)}`));
   }
+  reasons.push(...stackReasons(cand, item, pose.onCargoId, rect));
   return resultOf(reasons);
 }

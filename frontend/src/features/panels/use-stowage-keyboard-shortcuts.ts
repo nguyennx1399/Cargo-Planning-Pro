@@ -21,6 +21,7 @@ import { cancelPlacement } from "@/store/commit-placement";
 import type { Vessel } from "@/types/domain";
 import { usePlanDraftStore } from "@/store/usePlanDraftStore";
 import { usePlanStore } from "@/store/usePlanStore";
+import { canBeginBreakbulkMove } from "@/store/begin-breakbulk-move";
 
 /** The same guard Sidebar's bay-nav handler uses: never hijack keystrokes aimed at a text field.
  * The Unplaced search box (P2) is that text field, and it is why the guard is now load-bearing rather
@@ -30,6 +31,14 @@ const isTypingTarget = (target: EventTarget | null): boolean => {
   const tag = (target as HTMLElement | null)?.tagName;
   return tag === "INPUT" || tag === "TEXTAREA";
 };
+
+/** Widgets that already use the arrow keys for themselves (sidebar reorganisation plan). A focused
+ * tablist moves between tabs on ArrowLeft/Right — the accessible pattern base-ui implements — and since
+ * the arrow-key-pan work those keys ALSO pan the camera globally. Without this, one press would switch
+ * tab AND slide the ship. Same for listboxes, sliders and the select's combobox. Exported for its test. */
+export const ownsArrowKeys = (target: EventTarget | null): boolean =>
+  target instanceof Element &&
+  target.closest('[role="tablist"], [role="listbox"], [role="slider"], [role="combobox"], [role="menu"]') !== null;
 
 /**
  * Delete/Backspace unplaces the SELECTED project-cargo item — and nothing else. Only an id that
@@ -41,6 +50,8 @@ function unplaceSelectedCargo(): void {
   const { selectedId } = usePlanStore.getState();
   const draft = usePlanDraftStore.getState();
   if (!selectedId || !draft.plan?.breakbulk_cargo.some((c) => c.id === selectedId)) return;
+  // An item others rest on stays put, and the reason is shown (stacking plan): the store refuses too.
+  if (!canBeginBreakbulkMove(draft.plan, selectedId)) return;
   draft.unplaceBreakbulk(selectedId);
 }
 
@@ -75,8 +86,10 @@ export function useStowageKeyboardShortcuts(vessel: Vessel): void {
       // ARROWS PAN THE 3D VIEW (they used to step the bay filter — that moved to `[` / `]` below).
       // Left/right only: Up/Down are the browser's own scroll keys for the sidebar column, and hijacking
       // them globally would break scrolling in a panel-heavy UI.
-      if (e.key === "ArrowLeft") return usePlanStore.getState().panView(-1);
-      if (e.key === "ArrowRight") return usePlanStore.getState().panView(1);
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        if (ownsArrowKeys(e.target)) return; // the focused widget's own arrow keys, not the camera's
+        return usePlanStore.getState().panView(e.key === "ArrowLeft" ? -1 : 1);
+      }
       if (e.key === "[") return stepBay(vessel, -1);
       if (e.key === "]") return stepBay(vessel, 1);
 

@@ -15,7 +15,10 @@
  *  - `kg_above_base_m` (centre of gravity above its own base) defaults to HALF THE HEIGHT but stays
  *    editable and must land inside [0, height]. The domain type's own comment warns this is "NOT always
  *    height_m/2" — a nacelle is bottom-heavy — so the default is a starting point, never a fact;
- *  - the id is unique, because every gesture, placement and verdict is keyed by it.
+ *  - the id is unique, because every gesture, placement and verdict is keyed by it;
+ *  - STACKING (stacking plan, phase 05): a support FRAME must say how much it carries — a frame with no
+ *    max top load is meaningless, so it is required; for cargo it is optional, and filling it in is what
+ *    makes the item stackable. Either way it must be a number > 0.
  */
 import type { BreakbulkCargo, Vessel } from "@/types/domain";
 
@@ -27,7 +30,13 @@ export interface CustomCargoFields {
   weight: string;
   /** Centre of gravity above the item's own base. Blank = half the height. */
   kg?: string;
+  /** "frame" creates a stacking frame (`support_frame`); absent = "cargo". */
+  kind?: CustomCargoKind;
+  /** Max load (t) others may put on its top. Required for a frame; blank cargo is not stackable. */
+  maxTopLoad?: string;
 }
+
+export type CustomCargoKind = "cargo" | "frame";
 
 export type CustomCargoErrors = Partial<Record<keyof CustomCargoFields, string>>;
 
@@ -44,12 +53,12 @@ const positiveNumber = (raw: string): number | null => {
   return Number.isFinite(value) && value > 0 ? value : null;
 };
 
-/** `CUSTOM-1`, `CUSTOM-2`, … — the first index not already taken, so removing one and adding another
- * cannot resurrect a live id. */
-export function nextCustomCargoId(existing: readonly { id: string }[]): string {
+/** `CUSTOM-1`, `CUSTOM-2`, … (`FRAME-1`, … for frames) — the first index not already taken, so removing
+ * one and adding another cannot resurrect a live id. */
+export function nextCustomCargoId(existing: readonly { id: string }[], prefix = "CUSTOM"): string {
   const taken = new Set(existing.map((c) => c.id));
   for (let n = 1; ; n++) {
-    const id = `CUSTOM-${n}`;
+    const id = `${prefix}-${n}`;
     if (!taken.has(id)) return id;
   }
 }
@@ -88,6 +97,12 @@ export function parseCustomCargo(
     }
   }
 
+  const frame = fields.kind === "frame";
+  const rawTopLoad = fields.maxTopLoad?.trim() ?? "";
+  const maxTopLoad = rawTopLoad === "" ? null : positiveNumber(rawTopLoad);
+  if (rawTopLoad !== "" && maxTopLoad === null) errors.maxTopLoad = "Max top load must be a number greater than 0";
+  else if (frame && maxTopLoad === null) errors.maxTopLoad = "A frame needs the max load it can carry";
+
   const name = fields.name.trim();
   if (name && existing.some((c) => c.id === name)) errors.name = `"${name}" is already used`;
 
@@ -96,8 +111,8 @@ export function parseCustomCargo(
   return {
     ok: true,
     item: {
-      id: name || nextCustomCargoId(existing),
-      category: "general",
+      id: name || nextCustomCargoId(existing, frame ? "FRAME" : "CUSTOM"),
+      category: frame ? "support_frame" : "general",
       length_m: length as number,
       width_m: width as number,
       height_m: height as number,
@@ -107,6 +122,7 @@ export function parseCustomCargo(
       // rules treat an empty string as "no port given" (same as the demo's own unset fields).
       pol: "",
       pod: "",
+      ...(maxTopLoad !== null ? { stacking: { max_top_load_t: maxTopLoad } } : {}),
     },
   };
 }

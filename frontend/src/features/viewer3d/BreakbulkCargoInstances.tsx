@@ -10,6 +10,8 @@ import { usePlanStore } from "@/store/usePlanStore";
 import { cargoClickAction } from "@/store/cargo-click-action";
 import { cancelPlacement } from "@/store/commit-placement";
 import { GESTURE_LAYER, isFrontmostGestureHit } from "./press-ownership";
+import { elevationOf } from "@/engine/placement/breakbulk-stack";
+import { canBeginBreakbulkMove } from "@/store/begin-breakbulk-move";
 
 const CATEGORY_COLOR: Record<string, string> = {
   wind_turbine_blade: "#D8DEE4",
@@ -19,6 +21,8 @@ const CATEGORY_COLOR: Record<string, string> = {
   // Planner-defined cargo: a warmer neutral so a hand-entered item reads as distinct from the demo fleet
   // without implying a verdict (green/red belong to the drop layers).
   general: "#C2B49A",
+  // Stacking frames: dark steel, so a frame reads as structure rather than cargo.
+  support_frame: "#5B6770",
 };
 
 /** How far the pointer must travel with the button down before a press counts as a MOVE rather than a
@@ -75,6 +79,8 @@ export function BreakbulkCargoInstances({ vessel, plan }: { vessel: Vessel; plan
   const gesturing = handKind !== null;
 
   const meshes = useMemo(() => {
+    // Only the project-cargo half of the plan: a container move must not rebuild these geometries.
+    const stack = { breakbulk_cargo: plan.breakbulk_cargo, breakbulk_placements: plan.breakbulk_placements };
     return plan.breakbulk_placements
       .map((p) => {
         const item = byId.get(p.cargo_id);
@@ -83,11 +89,12 @@ export function BreakbulkCargoInstances({ vessel, plan }: { vessel: Vessel; plan
           id: p.cargo_id,
           underDeck: isUnderDeck(p.area_id),
           color: CATEGORY_COLOR[item.category] ?? "#C9D2DA",
-          geom: meshDataToBufferGeometry(buildBreakbulkMesh(item, p, vessel)),
+          // Drawn at its real height: on top of whatever it rests on (stacking plan).
+          geom: meshDataToBufferGeometry(buildBreakbulkMesh(item, p, vessel, elevationOf(stack, p.cargo_id))),
         };
       })
       .filter((m): m is NonNullable<typeof m> => m !== null);
-  }, [plan.breakbulk_placements, byId, vessel]);
+  }, [plan.breakbulk_placements, plan.breakbulk_cargo, byId, vessel]);
 
   const onPointerDown = (e: ThreeEvent<PointerEvent>, id: string) => {
     movedRef.current = false;
@@ -107,6 +114,8 @@ export function BreakbulkCargoInstances({ vessel, plan }: { vessel: Vessel; plan
       else if (Math.hypot(e.nativeEvent.clientX - down.x, e.nativeEvent.clientY - down.y) > DRAG_THRESHOLD_PX) {
         downRef.current = null;
         movedRef.current = true;
+        // An item others rest on stays put, and says why (stacking plan, `begin-breakbulk-move.ts`).
+        if (!canBeginBreakbulkMove(plan, id)) return;
         // Straight into the ONE hand: the item is lifted out of the scene, the ghost takes over, and
         // the window release (Sidebar's hook) commits it — no breakbulk-specific commit path.
         setHand({ kind: "breakbulk", id }, "drag");
@@ -116,7 +125,7 @@ export function BreakbulkCargoInstances({ vessel, plan }: { vessel: Vessel; plan
     }
     if (gesturing) return;
     // The tint belongs to the frontmost item too, or a box in front of a stack would highlight the
-    // stack behind it (the container layer's own hover writes after this one in the same dispatch).
+    // stack behind it. The container layer applies the same guard, so neither overwrites the other.
     if (isFrontmostGestureHit(e)) setHovered(id);
   };
 
@@ -137,8 +146,13 @@ export function BreakbulkCargoInstances({ vessel, plan }: { vessel: Vessel; plan
             onPointerDown={(e) => onPointerDown(e, m.id)}
             onPointerMove={(e) => onPointerMove(e, m.id)}
             onPointerOut={() => setHovered(null)}
-            onClick={() => {
+            onClick={(e) => {
               if (movedRef.current) return;
+              // Only the FRONTMOST cargo acts on a click, as on a press and a hover. Without this, two
+              // items along one ray both ran: the front one selected itself, the one behind re-selected
+              // itself, and a second click could never reach `pick` (found in the browser, 2026-09-18).
+              // Still no stopPropagation — the area drop plane below must keep getting the event.
+              if (!isFrontmostGestureHit(e)) return;
               // Click-to-place (Phase 01), the same rule the container layer uses: first click selects,
               // a second click on the SAME item takes it in hand, and one click on an area then places
               // it. NOTE the asymmetry with containers: an item in hand is not rendered at all (below),
@@ -150,7 +164,7 @@ export function BreakbulkCargoInstances({ vessel, plan }: { vessel: Vessel; plan
                   setSelected(m.id);
                   break;
                 case "pick":
-                  setHand({ kind: "breakbulk", id: m.id }, "pick");
+                  if (canBeginBreakbulkMove(plan, m.id)) setHand({ kind: "breakbulk", id: m.id }, "pick");
                   break;
                 case "putDown":
                   cancelPlacement();

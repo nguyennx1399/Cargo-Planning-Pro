@@ -25,3 +25,18 @@ describe("resetView", () => {
     expect(usePlanStore.getState().viewResetCount).toBe(after);
   });
 });
+
+/** Sidebar tab (sidebar reorganisation, phase 01): Load by default, survives a vessel change. */
+describe("sidebarTab", () => {
+  it("defaults to Load and switches on request", () => {
+    expect(["load", "view", "check"]).toContain(usePlanStore.getState().sidebarTab);
+    usePlanStore.getState().setSidebarTab("check");
+    expect(usePlanStore.getState().sidebarTab).toBe("check");
+  });
+
+  it("is kept across a vessel change — losing the tab on every switch would be irritating", () => {
+    usePlanStore.getState().setSidebarTab("view");
+    usePlanStore.getState().resetForVesselChange();
+    expect(usePlanStore.getState().sidebarTab).toBe("view");
+  });
+});

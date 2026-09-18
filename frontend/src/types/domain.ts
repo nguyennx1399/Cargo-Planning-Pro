@@ -129,7 +129,15 @@ export type BreakbulkCategory =
   | "wind_turbine_nacelle"
   | "wind_turbine_tower"
   | "yacht"
-  | "general";
+  | "general"
+  /** A steel stacking frame: placed like any item, carries others on its top (see `stacking`). */
+  | "support_frame";
+
+/** Present on an item or frame that others may rest on (stacking plan, 2026-09-18). Absent = nothing
+ * may be stacked on it. The load is everything above it, transitively, not only what touches it. */
+export interface BreakbulkStacking {
+  max_top_load_t: number;
+}
 
 export interface BreakbulkCargo {
   id: string;
@@ -141,6 +149,7 @@ export interface BreakbulkCargo {
   kg_above_base_m: number; // center of gravity above its own resting base — NOT always height_m/2
   pol: string;
   pod: string;
+  stacking?: BreakbulkStacking;
 }
 
 /** IMPORTANT — x_m is NOT the AP-referenced ship-frame x that lib/ship-frame.ts's
@@ -160,6 +169,9 @@ export interface BreakbulkPlacement {
   /** Which stowage area the item rests in: a `vessel.breakbulk_holds[].id`, or absent/"weather_deck"
    * for the weather deck (the only area before under-deck stowage existed). */
   area_id?: string;
+  /** The placed item/frame this one rests ON (stacking plan). Absent = the area's floor. A stacked
+   * placement carries its support's `area_id`, so every per-area rule still groups it correctly. */
+  on_cargo_id?: string;
 }
 
 export interface StowagePlan {

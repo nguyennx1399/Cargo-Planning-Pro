@@ -6,6 +6,8 @@ import { DropVerdictChip } from "@/features/viewer3d/DropVerdictChip";
 import { useDropCursor } from "@/features/viewer3d/use-drop-cursor";
 import { Sidebar } from "@/features/panels/Sidebar";
 import { BayPlanView } from "@/features/bayplan/BayPlanView";
+import { MiniViewOverlay, StageSwapButton } from "@/features/stage/StageSwapButton";
+import { useStageLayout } from "@/store/stage-layout-store";
 import { OffsetsImportPanel } from "@/features/vessel-onboarding/OffsetsImportPanel";
 import { buildDemoPlan } from "@/data/build-demo-plan";
 import { withCustomCargo } from "@/data/with-custom-cargo";
@@ -57,23 +59,23 @@ export default function App() {
   const playbackCount = usePlanStore((s) => s.playbackCount);
   const draftPlan = usePlanDraftStore((s) => s.plan);
   const loadPlan = usePlanDraftStore((s) => s.loadPlan);
-  const customCargo = usePlanStore((s) => s.customCargo);
 
   // The demo plan is built once per (vessel, toggles) and loaded into the draft store; there is no
   // memo-derived plan any more — the report, the scene, the sidebar and the bay plan all read the
   // draft. `vessel`/`containers` identities are cached per catalog id, so this cannot loop.
-  // Custom project cargo is merged into every rebuild (see `with-custom-cargo.ts`): the plan is rebuilt
-  // on each vessel/toggle change, so items the planner typed in would otherwise vanish the first time
-  // they press a toggle. Adding one bumps `customCargo` and therefore re-runs this same effect — one
-  // path into the draft store, not two.
+  // Custom project cargo is merged into every rebuild (see `with-custom-cargo.ts`), so items the planner
+  // typed in survive a vessel/toggle change. It is read, NOT subscribed to: adding one item must not
+  // rebuild the plan, or every hand-made placement and the undo history are wiped with it — adds and
+  // removes are applied to the current draft by `store/custom-cargo-in-plan.ts` instead.
   useEffect(() => {
     loadPlan(
       vessel,
-      withCustomCargo(buildDemoPlan(vessel, containers, { cargoLoaded, projectCargoLoaded }), customCargo),
+      withCustomCargo(buildDemoPlan(vessel, containers, { cargoLoaded, projectCargoLoaded }), usePlanStore.getState().customCargo),
     );
-  }, [vessel, containers, cargoLoaded, projectCargoLoaded, customCargo, loadPlan]);
+  }, [vessel, containers, cargoLoaded, projectCargoLoaded, loadPlan]);
 
   const plan = draftPlan ?? LOADING_PLAN;
+  const stageLayout = useStageLayout((s) => s.stageLayout);
   const report = useMemo(() => validatePlan(vessel, plan), [vessel, plan]);
   const attitude = useIndicativeStability(vessel, plan, playbackCount);
   // The canvas cursor + the "armed" ring for the drop gesture (P1). Computed here because `.viewport`
@@ -128,13 +130,22 @@ export default function App() {
             projectCargoLoaded={projectCargoLoaded}
             onToggleProjectCargo={() => setProjectCargoLoaded((v) => !v)}
           />
-          <main className="stage">
+          {/* STAGE SWAP (stage-swap plan): the same JSX in both layouts — only the class changes, so the
+              3D canvas is never remounted (camera, hull and pan state survive a swap). */}
+          <main className={`stage${stageLayout === "plan" ? " stage-plan" : ""}`}>
             <div className={`viewport ${dropCursor}`}>
               <VesselScene vessel={vessel} plan={plan} attitude={attitude} />
-              <DropVerdictChip vessel={vessel} plan={plan} />
+              {stageLayout === "3d" ? (
+                <>
+                  <DropVerdictChip vessel={vessel} plan={plan} />
+                  <StageSwapButton className="stage-swap-on-3d" />
+                </>
+              ) : (
+                <MiniViewOverlay />
+              )}
             </div>
             <div className="bayplan">
-              <BayPlanView vessel={vessel} plan={plan} />
+              <BayPlanView vessel={vessel} plan={plan} report={report} />
             </div>
           </main>
         </>

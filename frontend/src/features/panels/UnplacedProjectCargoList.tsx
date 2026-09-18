@@ -6,6 +6,7 @@ import { findFreeSpace } from "@/engine/placement/area-free-space";
 import { buildStowageModel } from "@/engine/stowage-model";
 import { handFitsInText } from "@/lib/area-fit-hint";
 import { usePlanStore } from "@/store/usePlanStore";
+import { removeCustomCargoFromPlan } from "@/store/custom-cargo-in-plan";
 
 /** One item's answer to "where can this go at all": the areas whose own rect/height/rating admit it
  * (spec §4.6). Deliberately NOT a promise that a drop succeeds anywhere in them — occupancy and
@@ -49,13 +50,12 @@ export function UnplacedProjectCargoList({ vessel, plan }: { vessel: Vessel; pla
   // The row's own state comes from the ONE hand field, not from the container-shaped projection: a
   // project-cargo item never fills `draggingContainerId`/`pickedId`, so reading those would leave every
   // row looking untouched while one of them is in hand.
-  const { hand, handMode, setHand, customCargo, removeCustomCargo } = usePlanStore(
+  const { hand, handMode, setHand, customCargo } = usePlanStore(
     useShallow((s) => ({
       hand: s.inHand,
       handMode: s.handMode,
       setHand: s.setHand,
       customCargo: s.customCargo,
-      removeCustomCargo: s.removeCustomCargo,
     })),
   );
   // Only the planner's own items can be removed: the demo set is fixture data, and deleting from it
@@ -135,6 +135,9 @@ export function UnplacedProjectCargoList({ vessel, plan }: { vessel: Vessel; pla
             onClick={() => setHand({ kind: "breakbulk", id: item.id }, "pick")}
           >
             {item.id} · {item.length_m} × {item.width_m} m · {item.weight_t} t
+            {/* Stacking: say which items can carry others, and how much, before the planner drags. */}
+            {item.stacking &&
+              ` · ${item.category === "support_frame" ? "frame" : "stackable"} ≤ ${item.stacking.max_top_load_t} t`}
             {customIds.has(item.id) && (
               <span
                 role="button"
@@ -146,13 +149,13 @@ export function UnplacedProjectCargoList({ vessel, plan }: { vessel: Vessel; pla
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
-                  removeCustomCargo(item.id);
+                  removeCustomCargoFromPlan(item.id);
                 }}
                 onKeyDown={(e) => {
                   if (e.key !== "Enter" && e.key !== " ") return;
                   e.stopPropagation();
                   e.preventDefault();
-                  removeCustomCargo(item.id);
+                  removeCustomCargoFromPlan(item.id);
                 }}
               >
                 ×

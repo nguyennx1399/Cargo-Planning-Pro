@@ -40,6 +40,9 @@ export interface AreaProbe {
   id: string;
   surfaceY: number;
   rect: Rect;
+  /** Overrides the call's `pad` for this probe. A stacking support's top uses [0, 0]: it must catch the
+   * pointer only when the pointer is really over it, or cargo could never be dropped beside a frame. */
+  pad?: readonly [number, number];
 }
 
 /** Where the ray crosses the horizontal plane at `surfaceY`. Null when it never does in front of the
@@ -95,7 +98,8 @@ export function areaUnderCursor(
     const area = areas[i];
     const point = cursorOnAreaPlane(area.surfaceY, origin, dir);
     if (!point) continue;
-    if (!inside(area.rect, toRectX(point[0]), point[2], pad[0], pad[1])) continue;
+    const [padX, padZ] = area.pad ?? pad;
+    if (!inside(area.rect, toRectX(point[0]), point[2], padX, padZ)) continue;
     if (area.surfaceY > bestY) {
       bestY = area.surfaceY;
       best = { index: i, point };

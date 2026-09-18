@@ -103,7 +103,9 @@ export function DropVerdictChip({ vessel, plan }: { vessel: Vessel; plan: Stowag
   // drop plane's `areaId` came from, rather than from a second prop the caller would have to thread.
   const areaLabel = useMemo(() => {
     if (!hoveredPose) return null;
-    return buildStowageModel(vessel).areaById.get(hoveredPose.areaId || WEATHER_DECK_AREA_ID)?.label ?? null;
+    const label = buildStowageModel(vessel).areaById.get(hoveredPose.areaId || WEATHER_DECK_AREA_ID)?.label ?? null;
+    // On a stacking support, say so first: "on FRAME-1, weather deck 87.5 / 0.5 m".
+    return label && hoveredPose.onCargoId ? `on ${hoveredPose.onCargoId}, ${label}` : label;
   }, [vessel, hoveredPose]);
 
   const text = chipText({

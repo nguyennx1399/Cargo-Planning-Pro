@@ -25,6 +25,8 @@ import type { BreakbulkPose } from "@/engine/placement/can-place-breakbulk";
 import { meshDataToBufferGeometry } from "@/lib/mesh-data-to-buffer-geometry";
 import { DROP_TINT } from "@/lib/drop-verdict";
 import { verdictForPose } from "@/lib/pose-verdict";
+import { elevationOf } from "@/engine/placement/breakbulk-stack";
+import { candidatePlan } from "@/engine/placement/breakbulk-stack-checks";
 
 /** The pose as a placement, for the mesh builder (and, in Phase 03, for the commit): the same shape
  * the predicate's own private `placementOf` builds, `area_id` omitted when the pose names no area —
@@ -36,6 +38,7 @@ function placementOfPose(item: BreakbulkCargo, pose: BreakbulkPose): BreakbulkPl
     z_m: pose.z_m,
     rotation_deg: pose.rotation_deg ?? 0,
     ...(pose.areaId ? { area_id: pose.areaId } : {}),
+    ...(pose.onCargoId ? { on_cargo_id: pose.onCargoId } : {}),
   };
 }
 
@@ -59,8 +62,14 @@ export function GhostBreakbulkPreview({
   );
 
   const geometry = useMemo(
-    () => (item && pose ? meshDataToBufferGeometry(buildBreakbulkMesh(item, placementOfPose(item, pose), vessel)) : null),
-    [vessel, item, pose],
+    () => {
+      if (!item || !pose) return null;
+      const placement = placementOfPose(item, pose);
+      // On a support, the ghost sits on its top: the same height the committed item will be drawn at.
+      const elevation = elevationOf(candidatePlan(plan, item, placement), item.id);
+      return meshDataToBufferGeometry(buildBreakbulkMesh(item, placement, vessel, elevation));
+    },
+    [vessel, plan, item, pose],
   );
 
   // The pose object is stable while the pointer stays on one snapped cell (the drop plane keeps the

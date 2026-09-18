@@ -47,11 +47,14 @@ function boxSceneMeshData(lengthM: number, widthM: number, heightM: number, cent
   return toMeshData(box);
 }
 
-export function buildBreakbulkMesh(item: BreakbulkCargo, placement: BreakbulkPlacement, vessel: Vessel): MeshData {
+/** `elevationM` is how far above its area's floor the item's base sits — the summed heights of what it
+ * rests on (`elevationOf`, stacking plan). 0 for an item on the floor, which is every caller before
+ * stacking, so the default keeps them unchanged. */
+export function buildBreakbulkMesh(item: BreakbulkCargo, placement: BreakbulkPlacement, vessel: Vessel, elevationM = 0): MeshData {
   // LAYOUT.hatchHeight (same scene-y deck reference on-deck containers use) unless the vessel
   // declares its real resting surface, e.g. BBC SAO PAULO's 1.55m-high hatch covers.
   // The placement's own stowage area: a hold's tank top is below the main-deck reference (negative).
-  const deckY = cargoBaseHeight(vessel, placement.area_id);
+  const deckY = cargoBaseHeight(vessel, placement.area_id) + elevationM;
   const rotated = placement.rotation_deg === 90;
   const lengthM = rotated ? item.width_m : item.length_m;
   const widthM = rotated ? item.length_m : item.width_m;

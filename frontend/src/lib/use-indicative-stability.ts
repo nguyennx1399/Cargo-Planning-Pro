@@ -12,6 +12,7 @@ import { computeIndicativeStability, type StabilityResult } from "@/engine/stabi
 import { visiblePlacements } from "@/engine/playback-slice";
 import { cargoWeightItem } from "./cargo-weight-item";
 import { breakbulkWeightItem } from "./breakbulk-weight-item";
+import { elevationOf } from "@/engine/placement/breakbulk-stack";
 
 const DRAFT_GRID_STEP_M = 0.5;
 const DRAFT_GRID_MIN_M = 3;
@@ -36,7 +37,7 @@ export function stabilityForVisiblePlan(
   // at a time" has no real meaning for them the way it does for hundreds of containers — they're
   // either all part of the current plan or not (see phase-04 plan's Key Insights).
   const breakbulkById = new Map(plan.breakbulk_cargo.map((c) => [c.id, c]));
-  const breakbulkCargo = plan.breakbulk_placements.map((p) => breakbulkWeightItem(vessel, geometry, breakbulkById.get(p.cargo_id)!, p));
+  const breakbulkCargo = plan.breakbulk_placements.map((p) => breakbulkWeightItem(vessel, geometry, breakbulkById.get(p.cargo_id)!, p, elevationOf(plan, p.cargo_id)));
   const cargo = [...containerCargo, ...breakbulkCargo];
   const maxDraftM = geometry.particulars.depth_m - 1;
   return computeIndicativeStability(DEMO_LIGHTSHIP, DEMO_CONSTANT, cargo, hydrostatics, geometry.particulars.lbp_m, maxDraftM);

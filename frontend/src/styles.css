@@ -148,10 +148,50 @@ html, body, #root { margin: 0; height: 100%; }
 .viewport { position: relative; min-height: 0; background: var(--stage); }
 .bayplan { border-top: 1px solid var(--line); background: #fff; padding: 10px 14px; min-height: 0; }
 
+/* ── STAGE SWAP (stage-swap plan): the same DOM in both layouts, only this class changes, so the 3D canvas
+   is never remounted. "plan": the bay plan fills the stage and the 3D view floats in the corner. */
+.stage-plan { grid-template-rows: 1fr; position: relative; }
+.stage-plan .bayplan { grid-row: 1; grid-column: 1; border-top: none; overflow: auto; }
+.stage-plan .viewport {
+  position: absolute; right: 14px; bottom: 14px; width: 320px; height: 200px; z-index: 5;
+  border: 1px solid var(--line); border-radius: 8px; overflow: hidden; box-shadow: 0 6px 20px rgba(29, 43, 54, 0.25);
+}
+/* The mini-view is for looking: this overlay turns any click on it into "show the 3D view large". */
+.mini-view-overlay {
+  position: absolute; inset: 0; z-index: 2; border: none; padding: 6px 8px; cursor: zoom-in;
+  background: transparent; display: flex; align-items: flex-start; justify-content: flex-start;
+}
+.mini-view-overlay span { font-size: 11px; background: rgba(255, 255, 255, 0.85); color: var(--ink); border-radius: 4px; padding: 1px 6px; }
+.mini-view-overlay:hover, .mini-view-overlay:focus-visible { box-shadow: inset 0 0 0 2px var(--ok); }
+.stage-swap {
+  border: 1px solid var(--line); background: #fff; border-radius: 4px; padding: 2px 10px;
+  font-size: 12px; cursor: pointer; color: var(--ink); white-space: nowrap;
+}
+.stage-swap:hover { background: var(--panel); }
+.stage-swap-on-3d { position: absolute; top: 10px; left: 10px; z-index: 2; }
+/* Big bay plan: overview on top, the picked bay's detail below. The right padding keeps the header clear of
+   the floating "Vessel onboarding" button. */
+.bayplan-big { display: grid; grid-template-rows: auto 1fr; gap: 10px; min-height: 100%; padding-right: 4px; }
+.bayplan-big .bay-overview { height: auto; }
+.bayplan-big .bay-overview-top { padding-right: 230px; min-height: 34px; }
+.bayplan-big-detail { display: grid; gap: 4px; align-content: start; border-top: 1px solid var(--line); padding-top: 8px; overflow: auto; }
+.pair-card-selected { background: color-mix(in srgb, var(--ok) 8%, #fff); border-radius: 4px; }
+.pair-card-selected .pair-card-open { text-decoration: underline; }
+
+/* Sidebar reorganisation: the ASIDE no longer scrolls. Header (vessel + status strip) and footer
+   (disclaimer) stay fixed, and only the active tab body scrolls — so plan health and the safety text are
+   on screen on every tab. */
 .sidebar {
   background: var(--panel); border-right: 1px solid var(--line);
-  overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 22px;
+  overflow: hidden; display: flex; flex-direction: column; min-height: 0;
 }
+.sidebar-header { padding: 20px 20px 12px; display: grid; gap: 4px; border-bottom: 1px solid var(--line); }
+.sidebar-tabs { flex: 1; min-height: 0; }
+.sidebar-tab-body {
+  flex: 1; min-height: 0; overflow-y: auto; padding: 16px 20px 20px;
+  display: flex; flex-direction: column; gap: 22px;
+}
+.sidebar-footer { padding: 10px 20px; border-top: 1px solid var(--line); }
 .sidebar h1 { font-family: "Barlow Semi Condensed", sans-serif; font-size: 22px; font-weight: 600; margin: 0; }
 .sidebar h2 { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin: 0 0 8px; }
 .sidebar p { margin: 0; }
@@ -168,7 +208,7 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .kv dt { color: var(--ink-soft); }
 .kv dd { margin: 0; font-variant-numeric: tabular-nums; }
 
-.sidebar footer { margin-top: auto; }
+
 
 /* The Unplaced section's retrieval chrome (P2). On MV Demo Horizon this list is 400 chips — ~2400 px
    of content — so the scroller is 320 px (was 140) and every row is reachable by search, filter,
@@ -243,27 +283,65 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .bayplan-grid { display: grid; gap: 3px; height: 100%; overflow: auto; align-content: start; font-size: 12px; }
 .bayplan-header { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
 .bayplan-header strong { font-size: 13px; }
-.bayplan-deck { display: grid; gap: 1px; }
-.bayplan-deck-label { text-transform: uppercase; letter-spacing: 0.04em; font-size: 10px; }
-.bayplan-hatchline { height: 2px; background: var(--ink); margin: 1px 0; }
-.bayplan-cells { display: grid; gap: 1.5px; justify-content: start; }
-.bayplan-cell {
-  aspect-ratio: 1; border: 1px solid var(--line); border-radius: 2px; background: var(--panel);
-  cursor: pointer; transition: outline-color 0.1s ease;
+/* ── Bay-plan SHEET (all-bay overview plan): print-style odd-bay sections, shared by the single-bay
+   view and the overview. Cell colour comes in as --c (colour mode, or the hover/selection highlight). */
+.sheet-back { border: 1px solid var(--line); background: #fff; border-radius: 4px; padding: 1px 8px; font-size: 12px; cursor: pointer; }
+.sheet-back:hover { background: var(--panel); }
+.sheet-pair { display: flex; gap: 8px; align-items: flex-start; }
+.sheet-section { display: grid; gap: 1.5px; justify-content: start; align-content: start; }
+.sheet-section-head { font-size: 10px; font-weight: 600; color: var(--ink-soft); text-align: center; }
+.sheet-grid, .sheet-strip { display: grid; gap: 1.5px; justify-content: start; }
+.sheet-hatchline { height: 2px; background: var(--ink); margin: 1px 0; }
+.sheet-blank { aspect-ratio: 1; }
+.sheet-cell { aspect-ratio: 1; position: relative; border: 1px solid var(--line); border-radius: 1.5px; background: #fff; cursor: pointer; }
+.sheet-cell-twenty, .sheet-cell-forty { background: var(--c); border-color: transparent; }
+/* The aft half of a 40' box: its colour, faded, crossed — "the other half of a 40'" (print convention). */
+.sheet-cell-fortyTail { background: color-mix(in srgb, var(--c) 30%, #fff); border-color: var(--c); }
+.sheet-cell-fortyTail::after {
+  content: ""; position: absolute; inset: 0;
+  background:
+    linear-gradient(45deg, transparent calc(50% - 0.7px), var(--c) calc(50% - 0.7px), var(--c) calc(50% + 0.7px), transparent calc(50% + 0.7px)),
+    linear-gradient(-45deg, transparent calc(50% - 0.7px), var(--c) calc(50% - 0.7px), var(--c) calc(50% + 0.7px), transparent calc(50% + 0.7px));
 }
-.bayplan-cell-blank { aspect-ratio: 1; }
-.bayplan-cell-filled { border-color: transparent; }
-.bayplan-cell-filled:hover { outline: 2px solid var(--ink); outline-offset: -2px; }
-/* A slot the container in hand may go in (Phase C). Outlined rather than filled: a filled cell
-   already means "a container is here", and the POD palette contains greens of its own. */
-.bayplan-cell-valid { border-color: var(--ok); box-shadow: inset 0 0 0 1px var(--ok); cursor: copy; }
-.bayplan-cell-valid:hover { background: var(--panel); }
-.bayplan-row-labels { display: grid; gap: 1.5px; font-size: 8px; text-align: center; justify-content: start; }
+.sheet-cell-twenty:hover, .sheet-cell-forty:hover, .sheet-cell-fortyTail:hover { outline: 2px solid var(--ink); outline-offset: -2px; }
+/* A position the container in hand may take. Outlined, never filled: a fill already means "cargo here". */
+.sheet-cell-valid { border-color: var(--ok); box-shadow: inset 0 0 0 1px var(--ok); cursor: copy; }
+.sheet-cell-valid:hover { background: color-mix(in srgb, var(--ok) 15%, #fff); }
+/* Big cells print POD + weight (stage-swap plan, phase 03); --t is the readable ink for --c. */
+.sheet-cell-text {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  color: var(--t, var(--ink)); font-size: 8.5px; line-height: 1.05; font-weight: 600; pointer-events: none; overflow: hidden;
+}
+.sheet-tier-label { font-size: 8px; color: var(--ink-soft); display: flex; align-items: center; justify-content: flex-end; padding-right: 3px; }
+.sheet-row-labels { font-size: 8px; text-align: center; color: var(--ink-soft); }
+/* Stack weight vs limit (the stack_weight rule's own numbers): tonnes in the bay view, a tint in the
+   overview; red over the limit either way. */
+.sheet-stack { font-size: 8px; display: flex; align-items: center; justify-content: center; border-radius: 1.5px; color: var(--ink-soft); }
+.sheet-stack-some { background: color-mix(in srgb, var(--ok) 20%, #fff); }
+.sheet-stack-high { background: color-mix(in srgb, var(--signal) 50%, #fff); }
+.sheet-stack-over { background: var(--error); }
+.sheet-stack-over-text { background: var(--error); color: #fff; font-weight: 600; }
+.sheet-row-weights { height: 20px; align-items: end; margin-top: 2px; }
+.sheet-row-weight { display: flex; align-items: flex-end; height: 100%; }
+.sheet-row-weight i { width: 100%; min-height: 2px; background: var(--signal); border-radius: 2px 2px 0 0; }
 
-.bayplan-weightdist { display: grid; gap: 1px; margin-top: 3px; padding-top: 3px; border-top: 1px solid var(--line); }
-.bayplan-weightdist-bars { display: grid; gap: 1.5px; height: 20px; align-items: end; justify-content: start; }
-.bayplan-weightdist-col { display: flex; align-items: flex-end; height: 100%; }
-.bayplan-weightdist-bar { width: 100%; min-height: 2px; background: var(--signal); border-radius: 2px 2px 0 0; }
+/* ── All-bay overview */
+.bay-overview { display: grid; grid-template-rows: auto auto auto 1fr; gap: 4px; height: 100%; min-height: 0; font-size: 12px; }
+.bay-overview-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.bay-overview-strip { display: flex; gap: 6px; overflow: auto; align-items: flex-start; padding-bottom: 6px; min-height: 0; }
+.pair-card { display: grid; gap: 2px; flex: none; padding: 0 6px 2px; border-left: 1px solid var(--line); }
+.pair-card:first-child { border-left: none; }
+.pair-card-head { display: flex; align-items: center; justify-content: center; gap: 5px; border-bottom: 1px solid var(--ink-soft); }
+.pair-card-open { border: none; background: none; font-weight: 700; font-size: 12px; cursor: pointer; padding: 0 4px; color: var(--ink); }
+.pair-card-open:hover { text-decoration: underline; }
+.problem-dot { width: 9px; height: 9px; border-radius: 50%; border: none; padding: 0; cursor: pointer; }
+.problem-dot-warning { background: var(--signal); }
+.problem-dot-error { background: var(--error); }
+.pc-bar { height: 10px; font-size: 8px; line-height: 10px; text-align: center; }
+.pc-bar-on { background: #C2B49A; color: #3A3326; border-radius: 2px; }
+.pair-card-foot { font-size: 9px; text-align: center; white-space: nowrap; }
+.legend-chips { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 11px; }
+.legend-chip i { display: inline-block; width: 12px; height: 9px; margin-right: 4px; vertical-align: middle; border-radius: 1.5px; }
 .state { padding: 40px; display: grid; gap: 8px; }
 
 .onboarding-panel { grid-column: 1 / -1; padding: 20px; display: grid; gap: 20px; max-width: 960px; margin: 0 auto; overflow-y: auto; height: 100%; }
@@ -310,3 +388,35 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
   opacity: 1;
   background: rgba(0, 0, 0, 0.08);
 }
+
+/* Tabs (components/ui/tabs.tsx). */
+.tabs-list { display: flex; gap: 2px; padding: 8px 20px 0; border-bottom: 1px solid var(--line); }
+.tabs-trigger {
+  padding: 6px 14px; font-size: 13px; font-weight: 600; color: var(--ink-soft);
+  border: 0; background: none; border-bottom: 2px solid transparent; cursor: pointer;
+}
+.tabs-trigger[data-selected], .tabs-trigger[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--signal); }
+.tabs-content { display: flex; }
+.tabs-content[hidden] { display: none; }
+
+/* The always-visible plan-health line. A button: clicking it opens the Check tab. */
+.status-strip {
+  margin-top: 8px; display: flex; gap: 12px; font-size: 12px; padding: 6px 8px;
+  border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; text-align: left;
+}
+.status-strip-error { border-color: var(--error); }
+.status-warn { color: var(--signal); font-weight: 600; }
+.status-error { color: var(--error); font-weight: 600; }
+
+/* Checks grouped by rule (ChecksPanel). */
+.check-groups { display: grid; gap: 6px; margin-top: 10px; }
+.check-group { border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
+.check-group-error { border-left: 3px solid var(--error); }
+.check-group-warning { border-left: 3px solid var(--signal); }
+.check-group-header {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  background: none; border: 0; padding: 4px 2px; cursor: pointer; font-size: 12px; text-align: left;
+}
+.check-group-label { flex: 1; font-weight: 600; }
+.check-group-count { font-variant-numeric: tabular-nums; color: var(--ink-soft); }
+.check-group-more { background: none; border: 0; padding: 6px 2px; cursor: pointer; text-decoration: underline; }

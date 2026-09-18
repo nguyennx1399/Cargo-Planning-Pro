@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { StowagePlan, Vessel } from "@/types/domain";
 import { Button } from "@/components/ui/button";
 import { CustomCargoForm } from "./CustomCargoForm";
@@ -13,6 +14,7 @@ interface Props {
 /** The "Project cargo" section of the sidebar, split out of Sidebar.tsx to keep that file under the
  * 200-LOC rule. Same copy and behaviour as before the split. */
 export function ProjectCargoPanel({ vessel, plan, projectCargoLoaded, onToggleProjectCargo }: Props) {
+  const [adding, setAdding] = useState(false);
   return (
     <section>
       <h2>Project cargo</h2>
@@ -40,7 +42,15 @@ export function ProjectCargoPanel({ vessel, plan, projectCargoLoaded, onTogglePr
           {vessel.breakbulk_holds?.length ? " — untick Hull to see cargo in the holds." : ""}
         </p>
       )}
-      <CustomCargoForm vessel={vessel} />
+      {/* Behind a button (sidebar reorganisation, phase 03): the form was most of this section's 473 px
+          and is only needed while entering an item. Only a successful Add or Cancel closes it. */}
+      {adding ? (
+        <CustomCargoForm vessel={vessel} onDone={() => setAdding(false)} />
+      ) : (
+        <Button variant="outline" size="sm" className="self-start" onClick={() => setAdding(true)}>
+          + Add project cargo
+        </Button>
+      )}
     </section>
   );
 }

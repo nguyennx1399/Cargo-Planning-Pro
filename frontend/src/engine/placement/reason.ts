@@ -53,6 +53,10 @@ export const PLACEMENT_RULES = [
   "breakbulk_over_pressure",
   // D4: the area itself is an approximation, not the candidate — a caveat, never a refusal.
   "breakbulk_approximate_area",
+  // stacking (project-cargo stacking plan): an item resting on another item's top
+  "breakbulk_unsupported",
+  "breakbulk_support_invalid",
+  "breakbulk_support_overloaded",
   // store-level guards (not validation rules): the requested id is not actionable
   "unknown_container",
   "unknown_breakbulk_cargo",
@@ -92,6 +96,9 @@ export const RULE_SEVERITY: Readonly<Record<PlacementRule, Severity>> = {
   breakbulk_overweight: "warning",
   breakbulk_over_pressure: "warning",
   breakbulk_approximate_area: "warning",
+  breakbulk_unsupported: "error",
+  breakbulk_support_invalid: "error",
+  breakbulk_support_overloaded: "error",
   unknown_container: "error",
   unknown_breakbulk_cargo: "error",
   no_plan: "error",

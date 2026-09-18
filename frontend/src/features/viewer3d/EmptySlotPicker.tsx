@@ -12,6 +12,7 @@ import { sizeFitsBay } from "@/engine/placement-checks";
 import { landingSlotFor } from "@/engine/placement/landing-slot";
 import { activeContainerId, usePlanStore } from "@/store/usePlanStore";
 import { commitPlacement } from "@/store/commit-placement";
+import { rayHitsCargo } from "./press-ownership";
 
 /**
  * Invisible pickable mesh over the slots the cursor may target. Same one-InstancedMesh-per-set
@@ -50,6 +51,11 @@ import { commitPlacement } from "@/store/commit-placement";
  * The parity filter stays RENDERING-ONLY: it keeps a 40' candidate's box (which reaches 6.7 m off its
  * own centre) from being stolen by a neighbouring 20' HALF's box, while the commit gate remains
  * `canPlaceContainer` in the draft store — no UI-local rule can refuse a drop.
+ *
+ * IDLE YIELDS TO CARGO: with nothing in hand, a pointer whose ray hits any cargo is left to that cargo
+ * (`rayHitsCargo`, `press-ownership.ts`). These volumes are invisible and cover the hatch covers and
+ * holds where project cargo rests, so they used to swallow its hover and click. Under a container hand
+ * the picker keeps priority: the slot above a stack, or under a project-cargo item, is the drop target.
  *
  * MOUNTED ONLY WHILE NO PROJECT-CARGO ITEM IS IN HAND ("never both layers", Phase D open question 2):
  * the container pick volumes and the area drop planes would otherwise fight for the same pointer,
@@ -167,11 +173,17 @@ export function EmptySlotPicker({ vessel, plan }: { vessel: Vessel; plan: Stowag
       ref={meshRef}
       args={[undefined, undefined, capacity]}
       onPointerMove={(e) => {
+        // IDLE YIELDS TO CARGO (see header): no stopPropagation, so the cargo behind gets the event.
+        if (!hand && rayHitsCargo(e)) {
+          if (usePlanStore.getState().hoveredSlot) setHoveredSlot(null); // no store write per move
+          return;
+        }
         e.stopPropagation();
         setHoveredSlot(landed(resolveSlot(e)));
       }}
       onPointerOut={() => setHoveredSlot(null)}
       onClick={(e) => {
+        if (!hand && rayHitsCargo(e)) return; // the cargo's own onClick selects / picks it
         e.stopPropagation();
         const target = landed(resolveSlot(e));
         // The CLICK trigger of the one commit resolver (WCAG 2.5.7): a PICKED container is placed by

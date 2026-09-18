@@ -57,6 +57,11 @@ interface ViewState extends HandFields, HandActions {
   /** The "Stowage box" view: a wireframe per deck level around the volume cargo can occupy. Unlike the
    * free-space overlay it stays on during a gesture — thin edges do not compete with the drop layers. */
   showStowageBox: boolean;
+  /** The sidebar tab (sidebar reorganisation plan). Held here rather than in component state because the
+   * Sidebar may remount on a vessel switch, and losing the planner's tab every time would be irritating.
+   * Session-scoped. Deliberately NEVER switched automatically by a gesture: a tab changing under the
+   * planner is disorienting, and the drop verdict is already at the cursor. */
+  sidebarTab: SidebarTab;
   setColorMode: (m: ColorMode) => void;
   setPaletteMode: (m: PaletteMode) => void;
   toggleHull: () => void;
@@ -88,9 +93,13 @@ interface ViewState extends HandFields, HandActions {
   panView: (dx: -1 | 1) => void;
   toggleFreeSpace: () => void;
   toggleStowageBox: () => void;
+  setSidebarTab: (tab: SidebarTab) => void;
   addCustomCargo: (item: BreakbulkCargo) => void;
   removeCustomCargo: (id: string) => void;
 }
+
+/** The sidebar's three task tabs: placing cargo, adjusting the view, reviewing the result. */
+export type SidebarTab = "load" | "view" | "check";
 
 // UI/view state only. The editable plan (and its undo history) lives in usePlanDraftStore.
 export const usePlanStore = create<ViewState>((set) => ({
@@ -103,6 +112,7 @@ export const usePlanStore = create<ViewState>((set) => ({
   customCargo: [],
   showFreeSpace: false,
   showStowageBox: false,
+  sidebarTab: "load",
   showHull: true,
   showOnDeck: true,
   showUnderDeck: true,
@@ -157,6 +167,7 @@ export const usePlanStore = create<ViewState>((set) => ({
   panView: (dx) => set((state) => ({ viewPan: { seq: state.viewPan.seq + 1, dx } })),
   toggleFreeSpace: () => set((state) => ({ showFreeSpace: !state.showFreeSpace })),
   toggleStowageBox: () => set((state) => ({ showStowageBox: !state.showStowageBox })),
+  setSidebarTab: (sidebarTab) => set({ sidebarTab }),
   addCustomCargo: (item) => set((state) => ({ customCargo: [...state.customCargo, item] })),
   removeCustomCargo: (id) => set((state) => ({ customCargo: state.customCargo.filter((c) => c.id !== id) })),
   resetForVesselChange: () =>

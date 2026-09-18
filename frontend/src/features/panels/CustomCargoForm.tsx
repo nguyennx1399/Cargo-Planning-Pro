@@ -15,13 +15,15 @@
  */
 import { useState } from "react";
 import type { Vessel } from "@/types/domain";
-import { parseCustomCargo, type CustomCargoErrors, type CustomCargoFields } from "@/lib/custom-cargo-input";
+import { parseCustomCargo, type CustomCargoErrors, type CustomCargoFields, type CustomCargoKind } from "@/lib/custom-cargo-input";
 import { usePlanStore } from "@/store/usePlanStore";
+import { addCustomCargoToPlan } from "@/store/custom-cargo-in-plan";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
-const EMPTY: CustomCargoFields = { name: "", length: "", width: "", height: "", weight: "", kg: "" };
+const EMPTY: CustomCargoFields = { name: "", length: "", width: "", height: "", weight: "", kg: "", kind: "cargo", maxTopLoad: "" };
 
 /** The four dimensions every item needs, in the order a planner reads them off a drawing. */
 const DIMENSION_FIELDS: { key: keyof CustomCargoFields; label: string; unit: string }[] = [
@@ -31,9 +33,13 @@ const DIMENSION_FIELDS: { key: keyof CustomCargoFields; label: string; unit: str
   { key: "weight", label: "Weight", unit: "t" },
 ];
 
-export function CustomCargoForm({ vessel }: { vessel: Vessel }) {
+/**
+ * `onDone` is called after a successful Add and on Cancel (sidebar reorganisation, phase 03): the panel
+ * that owns the "+ Add project cargo" button uses it to collapse the form. Nothing else closes it, so
+ * half-typed input is never discarded by a stray click.
+ */
+export function CustomCargoForm({ vessel, onDone }: { vessel: Vessel; onDone?: () => void }) {
   const customCargo = usePlanStore((s) => s.customCargo);
-  const addCustomCargo = usePlanStore((s) => s.addCustomCargo);
   const [fields, setFields] = useState<CustomCargoFields>(EMPTY);
   const [errors, setErrors] = useState<CustomCargoErrors>({});
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -43,16 +49,19 @@ export function CustomCargoForm({ vessel }: { vessel: Vessel }) {
     setErrors((e) => ({ ...e, [key]: undefined }));
   };
 
+  const frame = fields.kind === "frame";
+
   const submit = () => {
     const result = parseCustomCargo(fields, vessel, customCargo);
     if (!result.ok) {
       setErrors(result.errors);
       return;
     }
-    addCustomCargo(result.item);
+    addCustomCargoToPlan(result.item);
     setFields(EMPTY);
     setErrors({});
     setShowAdvanced(false);
+    onDone?.();
   };
 
   return (
@@ -61,6 +70,19 @@ export function CustomCargoForm({ vessel }: { vessel: Vessel }) {
         Add your own piece — it appears in the unplaced list below and is placed and checked exactly like
         the demo cargo.
       </p>
+      {/* Stacking (stacking plan, phase 05): a frame is placed like cargo, and its top carries others. */}
+      <ToggleGroup
+        value={[fields.kind ?? "cargo"]}
+        onValueChange={(v) => {
+          if (!v[0]) return;
+          set("kind", v[0] as CustomCargoKind);
+          setErrors((e) => ({ ...e, maxTopLoad: undefined })); // required-ness just changed
+        }}
+        aria-label="Type"
+      >
+        <ToggleGroupItem value="cargo">Cargo</ToggleGroupItem>
+        <ToggleGroupItem value="frame">Support frame</ToggleGroupItem>
+      </ToggleGroup>
       <div className="custom-cargo-grid">
         {DIMENSION_FIELDS.map(({ key, label, unit }) => (
           <div key={key} className="grid gap-1">
@@ -78,8 +100,20 @@ export function CustomCargoForm({ vessel }: { vessel: Vessel }) {
       </div>
 
       <div className="grid gap-1">
+        <Label htmlFor="cc-top-load">{frame ? "Max top load (t)" : "Max top load (t) — optional, makes it stackable"}</Label>
+        <Input
+          id="cc-top-load"
+          inputMode="decimal"
+          value={fields.maxTopLoad ?? ""}
+          onChange={(e) => set("maxTopLoad", e.target.value)}
+          aria-invalid={errors.maxTopLoad ? true : undefined}
+        />
+        {errors.maxTopLoad && <span className="custom-cargo-error">{errors.maxTopLoad}</span>}
+      </div>
+
+      <div className="grid gap-1">
         <Label htmlFor="cc-name">Name (optional)</Label>
-        <Input id="cc-name" value={fields.name} onChange={(e) => set("name", e.target.value)} placeholder="CUSTOM-1" />
+        <Input id="cc-name" value={fields.name} onChange={(e) => set("name", e.target.value)} placeholder={frame ? "FRAME-1" : "CUSTOM-1"} />
         {errors.name && <span className="custom-cargo-error">{errors.name}</span>}
       </div>
 
@@ -104,9 +138,16 @@ export function CustomCargoForm({ vessel }: { vessel: Vessel }) {
         </div>
       )}
 
-      <Button variant="outline" size="sm" className="self-start" onClick={submit}>
-        Add project cargo
-      </Button>
+      <div className="flex gap-2">
+        <Button variant="outline" size="sm" onClick={submit}>
+          {frame ? "Add support frame" : "Add project cargo"}
+        </Button>
+        {onDone && (
+          <Button variant="ghost" size="sm" onClick={onDone}>
+            Cancel
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

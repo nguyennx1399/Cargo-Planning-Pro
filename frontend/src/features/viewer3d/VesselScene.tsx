@@ -187,7 +187,7 @@ export function VesselScene({ vessel, plan, attitude }: { vessel: Vessel; plan: 
         <EmptySlotPicker vessel={vessel} plan={plan} />
         <GhostContainerPreview vessel={vessel} plan={plan} />
         {item ? <AreaPlaceholders vessel={vessel} regions={regions} /> : null}
-        {item ? <AreaDropPlane vessel={vessel} item={item} areas={areas} /> : null}
+        {item ? <AreaDropPlane vessel={vessel} plan={plan} item={item} areas={areas} /> : null}
         <GhostBreakbulkPreview vessel={vessel} plan={plan} item={item} pose={hoveredPose} />
         {showFreeSpace && !gestureActive ? <FreeSpaceView vessel={vessel} plan={plan} /> : null}
         {showStowageBox ? <StowageBoundingBox vessel={vessel} /> : null}

@@ -61,6 +61,7 @@ function poseOf(placement: BreakbulkPlacement): BreakbulkPose {
     z_m: placement.z_m,
     rotation_deg: placement.rotation_deg,
     ...(placement.area_id !== undefined ? { areaId: placement.area_id } : {}),
+    ...(placement.on_cargo_id !== undefined ? { onCargoId: placement.on_cargo_id } : {}),
   };
 }
 
@@ -152,4 +153,21 @@ export function breakbulkOverPressure(vessel: Vessel, cargo: BreakbulkCargo[], p
  * than one per item resting on it. */
 export function breakbulkApproximateArea(vessel: Vessel, cargo: BreakbulkCargo[], placements: BreakbulkPlacement[]): Violation[] {
   return violationsFor(vessel, cargo, placements, [], "breakbulk_approximate_area", severityOf("breakbulk_approximate_area"));
+}
+
+/** Stacking (project-cargo stacking plan): an item's footprint is not entirely on its support's top. */
+export function breakbulkUnsupported(vessel: Vessel, cargo: BreakbulkCargo[], placements: BreakbulkPlacement[]): Violation[] {
+  return violationsFor(vessel, cargo, placements, [], "breakbulk_unsupported");
+}
+
+/** Stacking: the item rests on something it cannot rest on — not placed, not stackable, another area,
+ * or a cycle. */
+export function breakbulkSupportInvalid(vessel: Vessel, cargo: BreakbulkCargo[], placements: BreakbulkPlacement[]): Violation[] {
+  return violationsFor(vessel, cargo, placements, [], "breakbulk_support_invalid");
+}
+
+/** Stacking: a support carries more than its max top load (everything above it, transitively). The
+ * message names the support, so each overloaded support is reported once however many items it carries. */
+export function breakbulkSupportOverloaded(vessel: Vessel, cargo: BreakbulkCargo[], placements: BreakbulkPlacement[]): Violation[] {
+  return violationsFor(vessel, cargo, placements, [], "breakbulk_support_overloaded");
 }

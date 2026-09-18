@@ -12,7 +12,10 @@ import type { WeightItem } from "@/engine/stability-indicative";
 import { cargoBaseHeight } from "@/engine/breakbulk-deck-area";
 import { placementXToSceneX } from "@/engine/stowage-model/coords";
 
-export function breakbulkWeightItem(vessel: Vessel, geometry: VesselGeometry, item: BreakbulkCargo, placement: BreakbulkPlacement): WeightItem {
+/** `elevationM`: metres the item's base sits above its area's floor because it rests on other cargo
+ * (`elevationOf`, stacking plan). A stack raises its VCG by exactly that much, and leaving it out
+ * would make GM read optimistic — the direction that matters. */
+export function breakbulkWeightItem(vessel: Vessel, geometry: VesselGeometry, item: BreakbulkCargo, placement: BreakbulkPlacement, elevationM = 0): WeightItem {
   const sceneX = placementXToSceneX(placement.x_m, vessel.length_m);
   return {
     weight_t: item.weight_t,
@@ -26,6 +29,6 @@ export function breakbulkWeightItem(vessel: Vessel, geometry: VesselGeometry, it
     // cargoBaseHeight = LAYOUT.hatchHeight for generic vessels, the real hatch-cover top when the
     // vessel declares a breakbulk_deck layout — always the same value the mesh builder renders at.
     // Uses the placement's own stowage area, so cargo on a tank top gets its (much lower) real KG.
-    kg_m: geometry.particulars.depth_m + cargoBaseHeight(vessel, placement.area_id) + item.kg_above_base_m,
+    kg_m: geometry.particulars.depth_m + cargoBaseHeight(vessel, placement.area_id) + elevationM + item.kg_above_base_m,
   };
 }

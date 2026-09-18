@@ -31,17 +31,20 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { ThreeEvent } from "@react-three/fiber";
-import type { BreakbulkCargo, Vessel } from "@/types/domain";
+import type { BreakbulkCargo, StowagePlan, Vessel } from "@/types/domain";
 import type { StowageArea } from "@/engine/stowage-model";
 import { placementXToSceneX, sceneXToPlacementX } from "@/engine/stowage-model";
 import { clampPoseToArea, footprintExtents, poseFromScenePoint } from "@/engine/placement/breakbulk-pose";
 import type { BreakbulkPose } from "@/engine/placement/can-place-breakbulk";
 import { areaUnderCursor, type AreaProbe, type Vec3 } from "@/lib/nearest-area";
+import { supportTopProbes } from "@/lib/support-top-probes";
 import { usePlanStore } from "@/store/usePlanStore";
 import { commitBreakbulkPlacement } from "@/store/commit-placement";
 
 export interface AreaDropPlaneProps {
   vessel: Vessel;
+  /** Read for the stackable items whose TOPS are drop surfaces too (stacking plan). */
+  plan: StowagePlan;
   /** The item in hand: the pose is clamped for its footprint, and its id is what a click commits. */
   item: BreakbulkCargo;
   /** The areas whose deck toggle is on — the same set `AreaPlaceholders` draws, so the visible layer
@@ -74,7 +77,7 @@ function pickVolume(vessel: Vessel, areas: readonly StowageArea[], padX: number,
   };
 }
 
-export function AreaDropPlane({ vessel, item, areas }: AreaDropPlaneProps) {
+export function AreaDropPlane({ vessel, plan, item, areas }: AreaDropPlaneProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const rotationDeg = usePlanStore((s) => s.handRotation);
   const setHoveredPose = usePlanStore((s) => s.setHoveredPose);
@@ -87,9 +90,16 @@ export function AreaDropPlane({ vessel, item, areas }: AreaDropPlaneProps) {
     return [ex / 2, ez / 2] as const;
   }, [item, rotationDeg]);
 
+  // STACKING: stackable items' tops are surfaces too, AFTER the areas (index < areas.length is an area);
+  // "highest surface under the ray wins" puts the pose on a top, not the floor (`support-top-probes.ts`).
+  const { breakbulk_cargo, breakbulk_placements } = plan; // a container move must not rebuild the tops
+  const tops = useMemo(
+    () => supportTopProbes({ breakbulk_cargo, breakbulk_placements }, areas, item.id),
+    [breakbulk_cargo, breakbulk_placements, areas, item.id],
+  );
   const probes = useMemo<AreaProbe[]>(
-    () => areas.map((a) => ({ id: a.id, surfaceY: a.surfaceY, rect: a.rect })),
-    [areas],
+    () => [...areas.map((a) => ({ id: a.id, surfaceY: a.surfaceY, rect: a.rect })), ...tops],
+    [areas, tops],
   );
   const volume = useMemo(
     () => (areas.length ? pickVolume(vessel, areas, padX, padZ) : null),
@@ -126,6 +136,12 @@ export function AreaDropPlane({ vessel, item, areas }: AreaDropPlaneProps) {
       (sceneX) => sceneXToPlacementX(sceneX, vessel.length_m),
     );
     if (!hit) return null;
+    if (hit.index >= areas.length) {
+      // On a support's top: clamped onto THAT top (fully supported), in the support's own area.
+      const top = tops[hit.index - areas.length];
+      const raw = poseFromScenePoint(vessel, top.areaId, hit.point[0], hit.point[2], rotationDeg);
+      return { ...clampPoseToArea(top, item, raw), onCargoId: top.id };
+    }
     const area = areas[hit.index];
     const raw = poseFromScenePoint(vessel, area.id, hit.point[0], hit.point[2], rotationDeg);
     return clampPoseToArea(area, item, raw);
@@ -138,10 +154,11 @@ export function AreaDropPlane({ vessel, item, areas }: AreaDropPlaneProps) {
   useEffect(() => {
     const pose = usePlanStore.getState().hoveredPose;
     if (!pose) return;
-    const area = areas.find((a) => a.id === pose.areaId);
-    if (!area) return;
-    setHoveredPose(clampPoseToArea(area, item, { ...pose, rotation_deg: rotationDeg }));
-  }, [rotationDeg, areas, item, setHoveredPose]);
+    // A pose on a support re-clamps onto that support's top, not the area around it.
+    const surface = pose.onCargoId ? tops.find((t) => t.id === pose.onCargoId) : areas.find((a) => a.id === pose.areaId);
+    if (!surface) return;
+    setHoveredPose(clampPoseToArea(surface, item, { ...pose, rotation_deg: rotationDeg }));
+  }, [rotationDeg, areas, tops, item, setHoveredPose]);
 
   if (!volume || !geometry) return null;
 

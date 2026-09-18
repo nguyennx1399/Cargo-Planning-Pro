@@ -179,12 +179,18 @@ export function ContainerInstances({ vessel, plan }: Props) {
           }
         }
         if (draggingContainerId) return; // a gesture is in flight: no hover churn under it
+        // A project-cargo item in front of this stack owns the hover: it wrote first (nearest-first
+        // dispatch) and must not be overwritten here (`press-ownership.ts`).
+        if (!isFrontmostGestureHit(e)) return;
         e.stopPropagation();
         setHovered(idAt(e));
       }}
       onPointerOut={() => setHovered(null)}
       onClick={(e) => {
         if (breakbulkHand) return; // the click belongs to the area plane: do not steal it
+        // An item in front owns the click: it already selected itself, and selecting this box after it
+        // would silently replace that selection. Do not stop, do not select.
+        if (!isFrontmostGestureHit(e)) return;
         e.stopPropagation();
         // Only reached when the press never travelled past the threshold (a started move hides this
         // instance, so the release cannot hit it). The `movedRef` gate is for the trailing click of a

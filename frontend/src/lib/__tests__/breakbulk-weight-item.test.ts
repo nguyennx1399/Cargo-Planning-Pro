@@ -14,6 +14,14 @@ function item(patch: Partial<BreakbulkCargo> = {}): BreakbulkCargo {
 }
 
 describe("breakbulkWeightItem", () => {
+  it("raises kg_m by the item's height above its floor when it rests on other cargo (stacking)", () => {
+    const placement: BreakbulkPlacement = { cargo_id: "b1", x_m: 77.5, z_m: 0, rotation_deg: 0 };
+    const onFloor = breakbulkWeightItem(vessel, geometry, item(), placement);
+    const stacked = breakbulkWeightItem(vessel, geometry, item(), placement, 2.5);
+    expect(stacked.kg_m - onFloor.kg_m).toBeCloseTo(2.5, 9);
+    expect(stacked.lcg_m).toBe(onFloor.lcg_m);
+  });
+
   it("converts x_m (vessel.length_m/2-symmetric) to TRUE ship-frame lcg_m, same inversion cargoWeightItem uses", () => {
     const placement: BreakbulkPlacement = { cargo_id: "b1", x_m: 77.5, z_m: -4.2, rotation_deg: 0 };
     const w = breakbulkWeightItem(vessel, geometry, item(), placement);

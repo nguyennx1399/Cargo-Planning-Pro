@@ -25,6 +25,7 @@ import { WEATHER_DECK_AREA_ID, buildStowageModel } from "@/engine/stowage-model"
 import { canPlaceContainer } from "@/engine/placement/can-place-container";
 import { canPlaceBreakbulk, type BreakbulkPose } from "@/engine/placement/can-place-breakbulk";
 import { dependentsLosingSupport, strandedMessage } from "@/engine/placement/support-dependents";
+import { carriesMessage, dependentsOf } from "@/engine/placement/breakbulk-stack";
 import { resultOf, severityOf, type PlacementResult, type PlacementRule } from "@/engine/placement/reason";
 
 /** Undo depth. Plain arrays — no history library (zundo deliberately not added). */
@@ -61,6 +62,7 @@ function breakbulkPlacementOf(cargoId: string, pose: BreakbulkPose): BreakbulkPl
     z_m: pose.z_m,
     rotation_deg: pose.rotation_deg ?? 0,
     ...(pose.areaId && pose.areaId !== WEATHER_DECK_AREA_ID ? { area_id: pose.areaId } : {}),
+    ...(pose.onCargoId ? { on_cargo_id: pose.onCargoId } : {}),
   };
 }
 
@@ -82,7 +84,7 @@ export interface PlanDraftState {
   /** Same contract for project cargo, with a `{areaId, x_m, z_m, rotation_deg}` pose. */
   placeBreakbulk: (cargoId: string, pose: BreakbulkPose) => PlacementResult;
   moveBreakbulk: (cargoId: string, pose: BreakbulkPose) => PlacementResult;
-  unplaceBreakbulk: (cargoId: string) => void;
+  unplaceBreakbulk: (cargoId: string) => PlacementResult;
   undo: () => void;
   redo: () => void;
 }
@@ -127,6 +129,10 @@ export const usePlanDraftStore = create<PlanDraftState>((set, get) => {
     if (!vessel || !plan) return fail("no_plan", `${cargoId}: no plan is loaded`);
     const item = plan.breakbulk_cargo.find((c) => c.id === cargoId);
     if (!item) return fail("unknown_breakbulk_cargo", `${cargoId}: not in the plan's project cargo list`);
+    // A MOVE of an item that others rest on would leave them in the air (stacking plan): refused here,
+    // the real guard, and said earlier at pick-up by `begin-breakbulk-move.ts`.
+    const dependents = dependentsOf(plan, cargoId);
+    if (dependents.length) return fail("no_floating", carriesMessage(cargoId, dependents));
     const stripped = { ...plan, breakbulk_placements: plan.breakbulk_placements.filter((p) => p.cargo_id !== cargoId) };
     const result = resultOf(canPlaceBreakbulk(buildStowageModel(vessel), stripped, item, pose, vessel).reasons);
     if (!result.ok) return result;
@@ -163,10 +169,13 @@ export const usePlanDraftStore = create<PlanDraftState>((set, get) => {
 
     unplaceBreakbulk: (cargoId) => {
       const { plan } = get();
-      if (!plan) return;
+      if (!plan) return fail("no_plan", `${cargoId}: no plan is loaded`);
       const remaining = plan.breakbulk_placements.filter((p) => p.cargo_id !== cargoId);
-      if (remaining.length === plan.breakbulk_placements.length) return;
+      if (remaining.length === plan.breakbulk_placements.length) return resultOf([]);
+      const dependents = dependentsOf(plan, cargoId);
+      if (dependents.length) return fail("no_floating", carriesMessage(cargoId, dependents));
       applyBreakbulk(plan, remaining);
+      return resultOf([]);
     },
 
     undo: () => {

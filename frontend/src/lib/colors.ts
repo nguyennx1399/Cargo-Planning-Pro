@@ -38,14 +38,17 @@ export function podColorMap(
   return out;
 }
 
-function weightColor(t: number): string {
+export function weightColor(t: number): string {
   // 0t light -> 30t dark
   const k = Math.min(1, Math.max(0, t / 30));
   const l = Math.round(82 - k * 50);
   return `hsl(210, 35%, ${l}%)`;
 }
 
-const TYPE_COLORS: Record<Container["type"], string> = {
+/** Dangerous goods override the type colour in "type" mode — one constant, shared with the legend. */
+export const IMDG_COLOR = "#D64545";
+
+export const TYPE_COLORS: Record<Container["type"], string> = {
   DRY: "#9AA5B1",
   REEFER: "#3A86C8",
   OPEN_TOP: "#B08D57",
@@ -59,7 +62,7 @@ export function containerColor(
   pods: Record<string, string>,
 ): string {
   if (mode === "weight") return weightColor(c.weight_t);
-  if (mode === "type") return c.imdg_class ? "#D64545" : TYPE_COLORS[c.type];
+  if (mode === "type") return c.imdg_class ? IMDG_COLOR : TYPE_COLORS[c.type];
   return pods[c.pod] ?? "#999999";
 }
 
