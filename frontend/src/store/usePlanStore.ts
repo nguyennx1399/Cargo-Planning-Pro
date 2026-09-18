@@ -54,6 +54,9 @@ interface ViewState extends HandFields, HandActions {
    * nothing in hand. Off by default — it is an answer to a question the planner asks, not a default
    * overlay. */
   showFreeSpace: boolean;
+  /** The "Stowage box" view: a wireframe per deck level around the volume cargo can occupy. Unlike the
+   * free-space overlay it stays on during a gesture — thin edges do not compete with the drop layers. */
+  showStowageBox: boolean;
   setColorMode: (m: ColorMode) => void;
   setPaletteMode: (m: PaletteMode) => void;
   toggleHull: () => void;
@@ -84,6 +87,7 @@ interface ViewState extends HandFields, HandActions {
   /** Slide the 3D view horizontally by one step. Bound to the arrow keys. */
   panView: (dx: -1 | 1) => void;
   toggleFreeSpace: () => void;
+  toggleStowageBox: () => void;
   addCustomCargo: (item: BreakbulkCargo) => void;
   removeCustomCargo: (id: string) => void;
 }
@@ -98,6 +102,7 @@ export const usePlanStore = create<ViewState>((set) => ({
   viewPan: { seq: 0, dx: 1 },
   customCargo: [],
   showFreeSpace: false,
+  showStowageBox: false,
   showHull: true,
   showOnDeck: true,
   showUnderDeck: true,
@@ -151,6 +156,7 @@ export const usePlanStore = create<ViewState>((set) => ({
   resetView: () => set((state) => ({ viewResetCount: state.viewResetCount + 1 })),
   panView: (dx) => set((state) => ({ viewPan: { seq: state.viewPan.seq + 1, dx } })),
   toggleFreeSpace: () => set((state) => ({ showFreeSpace: !state.showFreeSpace })),
+  toggleStowageBox: () => set((state) => ({ showStowageBox: !state.showStowageBox })),
   addCustomCargo: (item) => set((state) => ({ customCargo: [...state.customCargo, item] })),
   removeCustomCargo: (id) => set((state) => ({ customCargo: state.customCargo.filter((c) => c.id !== id) })),
   resetForVesselChange: () =>

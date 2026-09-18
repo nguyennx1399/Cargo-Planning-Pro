@@ -28,6 +28,8 @@ export function ViewOptionsPanel({ vessel, plan }: { vessel: Vessel; plan: Stowa
       resetView: state.resetView,
       showFreeSpace: state.showFreeSpace,
       toggleFreeSpace: state.toggleFreeSpace,
+      showStowageBox: state.showStowageBox,
+      toggleStowageBox: state.toggleStowageBox,
     }))
   );
   // One report per (vessel, plan, toggles) — never per frame. It is the same sweep the overlay draws
@@ -54,6 +56,10 @@ export function ViewOptionsPanel({ vessel, plan }: { vessel: Vessel; plan: Stowa
       {/* The free-space overlay + its numbers. The sentence is built in `lib/free-space-text.ts`, and the
           caveat under it is not decoration: "free" here means nothing is standing there, which is NOT the
           same as "an item fits" — weight, height and the stowage rules still decide that. */}
+      {/* Wireframe around the volume cargo can occupy, one box per deck level. Stays on during a drag. */}
+      <Button variant="outline" size="sm" className="self-start" onClick={s.toggleStowageBox}>
+        {s.showStowageBox ? "Hide stowage box" : "Show stowage box"}
+      </Button>
       <Button variant="outline" size="sm" className="self-start" onClick={s.toggleFreeSpace}>
         {s.showFreeSpace ? "Hide free space" : "Show free space"}
       </Button>

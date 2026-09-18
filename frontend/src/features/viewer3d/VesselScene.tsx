@@ -17,6 +17,7 @@ import { AreaPlaceholders } from "./AreaPlaceholders";
 import { AreaDropPlane } from "./AreaDropPlane";
 import { GhostBreakbulkPreview } from "./GhostBreakbulkPreview";
 import { FreeSpaceView } from "./FreeSpaceView";
+import { StowageBoundingBox } from "./StowageBoundingBox";
 import { WaterlineReference } from "./WaterlineReference";
 import { LoadingSequenceDriver } from "./LoadingSequenceDriver";
 import { ShipAttitudeDriver } from "./ShipAttitudeDriver";
@@ -132,6 +133,9 @@ export function VesselScene({ vessel, plan, attitude }: { vessel: Vessel; plan: 
   // go". Two translucent layers over the same cells would clutter and, worse, contradict — so the
   // overlay yields to any gesture.
   const showFreeSpace = usePlanStore((s) => s.showFreeSpace);
+  // The stowage box is NOT gated on the hand (unlike the free-space overlay): it is edges only, and
+  // seeing the envelope while placing is part of what it is for.
+  const showStowageBox = usePlanStore((s) => s.showStowageBox);
   const item = useMemo(
     () => (handId ? plan.breakbulk_cargo.find((c) => c.id === handId) ?? null : null),
     [plan.breakbulk_cargo, handId],
@@ -186,6 +190,7 @@ export function VesselScene({ vessel, plan, attitude }: { vessel: Vessel; plan: 
         {item ? <AreaDropPlane vessel={vessel} item={item} areas={areas} /> : null}
         <GhostBreakbulkPreview vessel={vessel} plan={plan} item={item} pose={hoveredPose} />
         {showFreeSpace && !gestureActive ? <FreeSpaceView vessel={vessel} plan={plan} /> : null}
+        {showStowageBox ? <StowageBoundingBox vessel={vessel} /> : null}
       </group>
 
       <OrbitLock />
